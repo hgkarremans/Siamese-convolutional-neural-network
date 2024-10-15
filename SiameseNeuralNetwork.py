@@ -12,28 +12,36 @@ from tensorflow.keras.models import load_model
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
 # Load images from assets folder
-def load_image(image_path):
+def load_image(image_path, loaded_images):
+    if image_path in loaded_images:
+        return loaded_images[image_path]
+
     img = cv2.imread(image_path)
     if img is None:
         raise FileNotFoundError(f"Image at path '{image_path}' could not be loaded. Check the file path and integrity.")
     img = cv2.resize(img, (128, 128))  # Resize to the input size
     img = img.astype('float32') / 255.0  # Normalize pixel values to [0, 1]
+
+    loaded_images[image_path] = img
     return img
+
 
 # Read CSV and prepare image pairs and labels
 def load_data(csv_file, image_folder):
     data = pd.read_csv(csv_file)
     image_pairs = []
     labels = []
+    loaded_images = {}
 
     for idx, row in tqdm(data.iterrows(), total=len(data), desc="Loading images"):
         img1_path = os.path.join(image_folder, row['Image1'])
         img2_path = os.path.join(image_folder, row['Image2'])
 
         try:
-            img1 = load_image(img1_path)
-            img2 = load_image(img2_path)
+            img1 = load_image(img1_path, loaded_images)
+            img2 = load_image(img2_path, loaded_images)
         except FileNotFoundError as e:
             print(e)  # Log the error message
             continue  # Skip this pair and continue with the next
@@ -42,23 +50,6 @@ def load_data(csv_file, image_folder):
         labels.append(row['Label'])  # Ensure 'Label' matches your CSV header case sensitivity
 
     return np.array(image_pairs), np.array(labels)
-
-# Read CSV and prepare image pairs and labels
-def load_data(csv_file, image_folder, max_workers=4):
-    data = pd.read_csv(csv_file)
-    image_pairs = []
-    labels = []
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(load_image_pair, row, image_folder): idx for idx, row in data.iterrows()}
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Loading images"):
-            pair, label = future.result()
-            if pair is not None:
-                image_pairs.append(pair)
-                labels.append(label)
-
-    return np.array(image_pairs), np.array(labels)
-
 # Define the base network for the Siamese model
 def build_base_model(input_shape):
     input_layer = Input(shape=input_shape)
@@ -110,8 +101,9 @@ def build_siamese_model(input_shape):
 
 # Function to test the similarity between two images
 def test_similarity(image1_path, image2_path, model, image_folder):
-    img1 = load_image(os.path.join(image_folder, image1_path))
-    img2 = load_image(os.path.join(image_folder, image2_path))
+    loaded_images = {}  # Initialize an empty dictionary for loaded images
+    img1 = load_image(os.path.join(image_folder, image1_path), loaded_images)
+    img2 = load_image(os.path.join(image_folder, image2_path), loaded_images)
 
     # Reshape to add batch dimension
     img1 = np.expand_dims(img1, axis=0)
@@ -144,7 +136,7 @@ if not os.path.exists(model_file):
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
 
     # Train the model
-    siamese_model.fit([X1, X2], y, batch_size=16, epochs=10, validation_split=0.2)
+    siamese_model.fit([X1, X2], y, batch_size=16, epochs=2, validation_split=0.2)
 
     # Save the model
     siamese_model.save(model_file)
