@@ -1,4 +1,3 @@
-
 import tensorflow as tf
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Lambda
 from tensorflow.keras.models import Model, load_model
@@ -50,30 +49,29 @@ def load_data(csv_file, image_folder):
         labels.append(row['Label'])  # Ensure 'Label' matches your CSV header case sensitivity
 
     return np.array(image_pairs), np.array(labels)
-# Define the base network for the Siamese model
+
+
+# Define the base network for the Siamese model with minimal complexity
 def build_base_model(input_shape):
     input_layer = Input(shape=input_shape)
 
-    x = Conv2D(64, (10, 10), activation='relu')(input_layer)
+    x = Conv2D(16, (3, 3), activation='relu')(input_layer)
     x = MaxPooling2D()(x)
 
-    x = Conv2D(128, (7, 7), activation='relu')(x)
+    x = Conv2D(32, (3, 3), activation='relu')(x)
     x = MaxPooling2D()(x)
 
-    x = Conv2D(128, (4, 4), activation='relu')(x)
-    x = MaxPooling2D()(x)
-
-    x = Conv2D(256, (4, 4), activation='relu')(x)
     x = Flatten()(x)
+    x = Dense(128, activation='sigmoid')(x)
 
-    x = Dense(4096, activation='sigmoid')(x)
+    return Model(inputs=input_layer, outputs=x)
 
-    return Model(inputs=input_layer, outputs=x)  # Ensure you return the model
 
 # Define the Lambda function outside the model to ensure tf is in scope
 @register_keras_serializable()
 def compute_l1_distance(tensors):
     return tf.abs(tensors[0] - tensors[1])
+
 
 # Define the Siamese network
 def build_siamese_model(input_shape):
@@ -99,6 +97,7 @@ def build_siamese_model(input_shape):
 
     return siamese_model
 
+
 # Function to test the similarity between two images
 def test_similarity(image1_path, image2_path, model, image_folder):
     loaded_images = {}  # Initialize an empty dictionary for loaded images
@@ -113,6 +112,7 @@ def test_similarity(image1_path, image2_path, model, image_folder):
     similarity_score = model.predict([img1, img2])[0][0]
 
     return similarity_score
+
 
 # Load and preprocess data
 csv_file = 'assets/training_data.csv'
@@ -136,7 +136,7 @@ if not os.path.exists(model_file):
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
 
     # Train the model
-    siamese_model.fit([X1, X2], y, batch_size=16, epochs=2, validation_split=0.2)
+    siamese_model.fit([X1, X2], y, batch_size=16, epochs=6, validation_split=0.2)
 
     # Save the model
     siamese_model.save(model_file)
