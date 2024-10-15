@@ -55,10 +55,13 @@ def load_data(csv_file, image_folder):
 def build_base_model(input_shape):
     input_layer = Input(shape=input_shape)
 
-    x = Conv2D(16, (3, 3), activation='relu')(input_layer)
+    x = Conv2D(32, (10, 10), activation='relu')(input_layer)
     x = MaxPooling2D()(x)
 
-    x = Conv2D(32, (3, 3), activation='relu')(x)
+    x = Conv2D(64, (7, 7), activation='relu')(input_layer)
+    x = MaxPooling2D()(x)
+
+    x = Conv2D(128, (4, 4), activation='relu')(input_layer)
     x = MaxPooling2D()(x)
 
     x = Flatten()(x)
@@ -136,7 +139,7 @@ if not os.path.exists(model_file):
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
 
     # Train the model
-    siamese_model.fit([X1, X2], y, batch_size=16, epochs=6, validation_split=0.2)
+    siamese_model.fit([X1, X2], y, batch_size=16, epochs=5, validation_split=0.2)
 
     # Save the model
     siamese_model.save(model_file)
