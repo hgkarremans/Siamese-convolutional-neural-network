@@ -10,6 +10,7 @@ from keras.saving import register_keras_serializable
 from tqdm import tqdm
 from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, list_collections
 
+
 # Function to load and preprocess images
 def load_image(image_path, loaded_images):
     if image_path in loaded_images:
@@ -23,6 +24,7 @@ def load_image(image_path, loaded_images):
 
     loaded_images[image_path] = img
     return img
+
 
 # Load data from CSV and prepare image pairs and labels
 def load_data(csv_file, image_folder):
@@ -47,6 +49,7 @@ def load_data(csv_file, image_folder):
 
     return np.array(image_pairs), np.array(labels)
 
+
 # Define the base network for the Siamese model
 def build_base_model(input_shape):
     input_layer = Input(shape=input_shape)
@@ -65,10 +68,12 @@ def build_base_model(input_shape):
 
     return Model(inputs=input_layer, outputs=x)
 
+
 # Define the Lambda function for L1 distance
 @register_keras_serializable()
 def compute_l1_distance(tensors):
     return tf.abs(tensors[0] - tensors[1])
+
 
 def build_siamese_model(input_shape):
     base_model = build_base_model(input_shape)
@@ -91,6 +96,7 @@ def build_siamese_model(input_shape):
 
     return Model(inputs=[input_a, input_b], outputs=output), embedding_model
 
+
 # Function to test the similarity between two images
 def test_similarity(image1_path, image2_path, model, image_folder):
     loaded_images = {}
@@ -102,6 +108,7 @@ def test_similarity(image1_path, image2_path, model, image_folder):
 
     similarity_score = model.predict([img1, img2])[0][0]
     return similarity_score
+
 
 # Load and preprocess data
 csv_file = 'assets/training_data.csv'
@@ -134,22 +141,34 @@ if not os.path.exists(model_file):
 else:
     # Load the trained models with custom objects
     siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
-    embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
+    embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance},
+                                 safe_mode=False)
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
 
-# Milvus Integration
 # Connect to Milvus
 connections.connect("default", host="localhost", port="19530")
 
 # Define the schema for the collection
 fields = [
     FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-    FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=128)
+    FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=128),
+    FieldSchema(name="image_name", dtype=DataType.VARCHAR, max_length=255)
 ]
 schema = CollectionSchema(fields, "HouseImages collection")
 
 # Create the collection
 collection = Collection("house_images", schema)
+
+# Create an index for the 'embedding' field using the IVF_FLAT index type
+index_params = {
+    "index_type": "IVF_FLAT",  # You can use other index types like IVF_SQ8 for faster searches
+    "params": {"nlist": 100},  # 'nlist' is the number of clusters (a parameter for IVF-based indexes)
+    "metric_type": "L2"        # 'L2' is the distance metric (Euclidean distance)
+}
+index = Index(collection, "embedding", index_params)
+
+# Now, load the collection
+collection.load()
 
 # Function to extract vectors using the Siamese model
 def extract_vector(image_path, model):
@@ -170,54 +189,28 @@ def extract_vector(image_path, model):
 
     return vector[0]
 
-image_id_mapping = {}  # Dictionary to store mapping between ID and image name
+# Function to insert vectors into Milvus
+def insert_vectors(image_folder, model):
+    for image_name in os.listdir(image_folder):
+        image_path = os.path.join(image_folder, image_name)
+        query_vector = extract_vector(image_path, model)
+        if query_vector is None:
+            continue
 
-def insert_vector_if_not_exists(image_path, model):
-    query_vector = extract_vector(image_path, model)
-    if query_vector is None:
-        return
+        # Check if the vector already exists in the collection
+        results = collection.search(
+            [query_vector.tolist()],
+            "embedding",
+            {"metric_type": "L2", "params": {"nprobe": 10}},
+            limit=1
+        )
 
-    # Search for the vector in the database
-    results = collection.search(
-        [query_vector.tolist()],
-        "embedding",
-        {"metric_type": "L2", "params": {"nprobe": 10}},
-        limit=1
-    )
-
-    # If no similar vector is found, insert the new vector
-    if not results[0]:
-        insert_result = collection.insert([[query_vector.tolist()]])
-        image_id_mapping[insert_result.primary_keys[0]] = os.path.basename(image_path)
-        print(f"Inserted vector for image: {image_path}")
-    else:
-        print(f"Vector for image {image_path} already exists in the database.")
+        if not results[0]:
+            collection.insert([[query_vector.tolist()], [image_name]])
+            print(f"Inserted vector for image: {image_name}")
+        else:
+            print(f"Vector for image {image_name} already exists in the database.")
 
 # Example usage
-image_path = 'assets/HouseImages/Lijnmarkt.jpg'
-insert_vector_if_not_exists(image_path, embedding_model)
-
-# Function to search for similar vectors
-def search_similar(image_path, model, top_k=5):
-    query_vector = extract_vector(image_path, model)
-    if query_vector is None:
-        print(f"Error: Unable to extract vector for image at {image_path}")
-        return []
-
-    results = collection.search(
-        [query_vector.tolist()],
-        "embedding",
-        {"metric_type": "L2", "params": {"nprobe": 10}},
-        limit=top_k
-    )
-
-    similar_images = []
-    for result in results[0]:
-        image_name = image_id_mapping.get(result.id, "Unknown")
-        similar_images.append((image_name, result.distance))
-        print(f"Image: {image_name}, Distance: {result.distance}")
-
-    return similar_images
-
-# Example search
-search_similar('assets/HouseImages/Lijnmarkt.jpg', embedding_model)
+image_folder = 'assets/HouseImages'
+insert_vectors(image_folder, embedding_model)
