@@ -23,7 +23,8 @@ connections.connect("default", host="localhost", port="19530")
 # Define the schema for the collection
 fields = [
     FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-    FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=128)
+    FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=128),
+    FieldSchema(name="image_name", dtype=DataType.VARCHAR, max_length=255)
 ]
 schema = CollectionSchema(fields, "HouseImages collection")
 
@@ -54,11 +55,13 @@ def extract_vector(image_path, model):
 # Insert vectors into Milvus
 def insert_vectors(image_folder, model):
     vectors = []
+    image_names = []
     for image_name in os.listdir(image_folder):
         image_path = os.path.join(image_folder, image_name)
         vector = extract_vector(image_path, model)
         vectors.append(vector.tolist())  # Convert numpy array to list
-    collection.insert([vectors])
+        image_names.append(image_name)
+    collection.insert([vectors, image_names])
 
 # Example usage
 image_folder = 'assets/HouseImages'
@@ -79,4 +82,4 @@ def search_similar(image_path, model, top_k=5):
 # Example search
 results = search_similar('assets/HouseImages/Lijnmarkt.jpg', embedding_model)
 for result in results[0]:
-    print(f"ID: {result.id}, Distance: {result.distance}")
+    print(f"ID: {result.id}, Distance: {result.distance}, Image Name: {result.entity.get('image_name')}")
