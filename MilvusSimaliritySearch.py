@@ -1,19 +1,21 @@
-from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection
-import numpy as np
-import cv2
 import os
-import tensorflow as tf
+import cv2
+import numpy as np
+from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, list_collections
 from tensorflow.keras.models import load_model
 from keras.saving import register_keras_serializable
+import tensorflow as tf
 
 # Define the Lambda function outside the model to ensure tf is in scope
 @register_keras_serializable()
 def compute_l1_distance(tensors):
     return tf.abs(tensors[0] - tensors[1])
 
-# Load the Siamese model
+# Load the Siamese and embedding models
 model_file = 'siamese_model.keras'
+embedding_model_file = 'embedding_model.keras'
 siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
+embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
 
 # Connect to Milvus
 connections.connect("default", host="localhost", port="19530")
@@ -25,21 +27,23 @@ fields = [
 ]
 schema = CollectionSchema(fields, "HouseImages collection")
 
+# Drop the collection if it exists
+if "house_images" in list_collections():
+    collection = Collection("house_images")
+    collection.drop()
+
 # Create the collection
 collection = Collection("house_images", schema)
 
-# Function to extract vectors using the Siamese model
+# Function to extract vectors using the embedding model
 def extract_vector(image_path, model):
     img = cv2.imread(image_path)
     img = cv2.resize(img, (128, 128))
     img = img.astype('float32') / 255.0
     img = np.expand_dims(img, axis=0)
 
-    # Create a dummy second input (e.g., a zero array) to match the model's input requirements
-    dummy_input = np.zeros_like(img)
-
-    # Get the vector from the model
-    vector = model.predict([img, dummy_input])
+    # Get the vector from the embedding model
+    vector = model.predict(img)
 
     # Ensure the vector has the correct dimension
     if vector.shape[1] != 128:
@@ -58,7 +62,7 @@ def insert_vectors(image_folder, model):
 
 # Example usage
 image_folder = 'assets/HouseImages'
-insert_vectors(image_folder, siamese_model)
+insert_vectors(image_folder, embedding_model)
 
 # Create an index for faster search
 collection.create_index("embedding", {"index_type": "IVF_FLAT", "metric_type": "L2", "params": {"nlist": 128}})
@@ -73,6 +77,6 @@ def search_similar(image_path, model, top_k=5):
     return results
 
 # Example search
-results = search_similar('assets/HouseImages/Lijnmarkt.jpg', siamese_model)
+results = search_similar('assets/HouseImages/Lijnmarkt.jpg', embedding_model)
 for result in results[0]:
     print(f"ID: {result.id}, Distance: {result.distance}")
