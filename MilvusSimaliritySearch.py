@@ -34,8 +34,18 @@ def extract_vector(image_path, model):
     img = cv2.resize(img, (128, 128))
     img = img.astype('float32') / 255.0
     img = np.expand_dims(img, axis=0)
-    vector = model.predict(img)[0]
-    return vector
+
+    # Create a dummy second input (e.g., a zero array) to match the model's input requirements
+    dummy_input = np.zeros_like(img)
+
+    # Get the vector from the model
+    vector = model.predict([img, dummy_input])
+
+    # Ensure the vector has the correct dimension
+    if vector.shape[1] != 128:
+        raise ValueError(f"Vector dimension mismatch: expected 128, got {vector.shape[1]}")
+
+    return vector[0]
 
 # Insert vectors into Milvus
 def insert_vectors(image_folder, model):
@@ -43,7 +53,7 @@ def insert_vectors(image_folder, model):
     for image_name in os.listdir(image_folder):
         image_path = os.path.join(image_folder, image_name)
         vector = extract_vector(image_path, model)
-        vectors.append(vector)
+        vectors.append(vector.tolist())  # Convert numpy array to list
     collection.insert([vectors])
 
 # Example usage
@@ -59,7 +69,7 @@ collection.load()
 # Function to search for similar vectors
 def search_similar(image_path, model, top_k=5):
     query_vector = extract_vector(image_path, model)
-    results = collection.search([query_vector], "embedding", {"metric_type": "L2", "params": {"nprobe": 10}}, limit=top_k)
+    results = collection.search([query_vector.tolist()], "embedding", {"metric_type": "L2", "params": {"nprobe": 10}}, limit=top_k)
     return results
 
 # Example search
