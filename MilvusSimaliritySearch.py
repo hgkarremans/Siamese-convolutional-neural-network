@@ -39,6 +39,9 @@ collection = Collection("house_images", schema)
 # Function to extract vectors using the embedding model
 def extract_vector(image_path, model):
     img = cv2.imread(image_path)
+    if img is None:
+        print(f"Error: Unable to load image at {image_path}")
+        return None
     img = cv2.resize(img, (128, 128))
     img = img.astype('float32') / 255.0
     img = np.expand_dims(img, axis=0)
@@ -59,8 +62,9 @@ def insert_vectors(image_folder, model):
     for image_name in os.listdir(image_folder):
         image_path = os.path.join(image_folder, image_name)
         vector = extract_vector(image_path, model)
-        vectors.append(vector.tolist())  # Convert numpy array to list
-        image_names.append(image_name)
+        if vector is not None:
+            vectors.append(vector.tolist())  # Convert numpy array to list
+            image_names.append(image_name)
     collection.insert([vectors, image_names])
 
 # Example usage
@@ -76,6 +80,9 @@ collection.load()
 # Function to search for similar vectors
 def search_similar(image_path, model, top_k=5):
     query_vector = extract_vector(image_path, model)
+    if query_vector is None:
+        print(f"Error: Unable to extract vector for image at {image_path}")
+        return []
     results = collection.search([query_vector.tolist()], "embedding", {"metric_type": "L2", "params": {"nprobe": 10}}, limit=top_k)
     return results
 
