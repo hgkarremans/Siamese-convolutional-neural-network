@@ -1,16 +1,15 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Lambda
-from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 import pandas as pd
 import numpy as np
 import cv2
 import os
 from keras.saving import register_keras_serializable
-from tensorflow.keras.models import load_model
 from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from tensorflow.lite.python.interpreter import Interpreter
+from tensorflow.lite.python.interpreter import load_delegate
 
 # Load images from assets folder
 def load_image(image_path, loaded_images):
@@ -25,7 +24,6 @@ def load_image(image_path, loaded_images):
 
     loaded_images[image_path] = img
     return img
-
 
 # Read CSV and prepare image pairs and labels
 def load_data(csv_file, image_folder):
@@ -50,7 +48,6 @@ def load_data(csv_file, image_folder):
 
     return np.array(image_pairs), np.array(labels)
 
-
 # Define the base network for the Siamese model with minimal complexity
 def build_base_model(input_shape):
     input_layer = Input(shape=input_shape)
@@ -58,10 +55,10 @@ def build_base_model(input_shape):
     x = Conv2D(32, (10, 10), activation='relu')(input_layer)
     x = MaxPooling2D()(x)
 
-    x = Conv2D(64, (7, 7), activation='relu')(input_layer)
+    x = Conv2D(64, (7, 7), activation='relu')(x)
     x = MaxPooling2D()(x)
 
-    x = Conv2D(128, (4, 4), activation='relu')(input_layer)
+    x = Conv2D(128, (4, 4), activation='relu')(x)
     x = MaxPooling2D()(x)
 
     x = Flatten()(x)
@@ -69,12 +66,10 @@ def build_base_model(input_shape):
 
     return Model(inputs=input_layer, outputs=x)
 
-
 # Define the Lambda function outside the model to ensure tf is in scope
 @register_keras_serializable()
 def compute_l1_distance(tensors):
     return tf.abs(tensors[0] - tensors[1])
-
 
 # Define the Siamese network
 def build_siamese_model(input_shape):
@@ -100,9 +95,8 @@ def build_siamese_model(input_shape):
 
     return siamese_model
 
-
-# Function to test the similarity between two images
-def test_similarity(image1_path, image2_path, model, image_folder):
+# Function to test the similarity between two images using Edge TPU
+def test_similarity(image1_path, image2_path, interpreter, image_folder):
     loaded_images = {}  # Initialize an empty dictionary for loaded images
     img1 = load_image(os.path.join(image_folder, image1_path), loaded_images)
     img2 = load_image(os.path.join(image_folder, image2_path), loaded_images)
@@ -111,11 +105,17 @@ def test_similarity(image1_path, image2_path, model, image_folder):
     img1 = np.expand_dims(img1, axis=0)
     img2 = np.expand_dims(img2, axis=0)
 
-    # Predict similarity score (1 is duplicate, 0 is unique)
-    similarity_score = model.predict([img1, img2])[0][0]
+    # Set input tensor
+    interpreter.set_tensor(interpreter.get_input_details()[0]['index'], img1)
+    interpreter.set_tensor(interpreter.get_input_details()[1]['index'], img2)
+
+    # Run inference
+    interpreter.invoke()
+
+    # Get output tensor
+    similarity_score = interpreter.get_tensor(interpreter.get_output_details()[0]['index'])[0][0]
 
     return similarity_score
-
 
 # Load and preprocess data
 csv_file = 'assets/training_data.csv'
@@ -128,7 +128,7 @@ X2 = np.array([pair[1] for pair in image_pairs])
 y = np.array(labels)
 
 # Define model file name
-model_file = 'siamese_model.keras'
+model_file = 'siamese_model.tflite'
 
 if not os.path.exists(model_file):
     # Build the model
@@ -141,12 +141,20 @@ if not os.path.exists(model_file):
     # Train the model
     siamese_model.fit([X1, X2], y, batch_size=16, epochs=5, validation_split=0.2)
 
-    # Save the model
-    siamese_model.save(model_file)
-else:
-    # Load the trained model with custom objects
-    siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
-    siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
+    # Convert the model to TensorFlow Lite format
+    converter = tf.lite.TFLiteConverter.from_keras_model(siamese_model)
+    tflite_model = converter.convert()
+
+    # Save the TensorFlow Lite model
+    with open(model_file, 'wb') as f:
+        f.write(tflite_model)
+
+    # Compile the TensorFlow Lite model for the Edge TPU
+    os.system(f"edgetpu_compiler {model_file}")
+
+# Load the compiled TensorFlow Lite model for the Edge TPU
+interpreter = Interpreter(model_path=model_file, experimental_delegates=[load_delegate('libedgetpu.so.1')])
+interpreter.allocate_tensors()
 
 # --- TESTING TWO NEW IMAGES ---
 new_image_directory = 'assets/HouseImages'  # Specify the new directory where the images are located
@@ -154,20 +162,20 @@ image1 = 'Lijnmarkt.jpg'  # Replace with your test image file name
 image2 = 'LijnmarktKopie.jpg'  # Replace with your test image file name
 
 # Calculate similarity
-similarity = test_similarity(image1, image2, siamese_model, new_image_directory)
+similarity = test_similarity(image1, image2, interpreter, new_image_directory)
 print(f"Similarity score between {image1} and {image2}: {similarity:.2f}")
 
-similarity = test_similarity('Lijnmarkt.jpg', 'pikachu.jpeg', siamese_model, new_image_directory)
+similarity = test_similarity('Lijnmarkt.jpg', 'pikachu.jpeg', interpreter, new_image_directory)
 print(f"Similarity score between Lijnmarkt.jpg and pikachu.jpeg: {similarity:.2f}")
 
-similarity = test_similarity('Lijnmarkt.jpg', 'RandomHouse.jpg', siamese_model, new_image_directory)
+similarity = test_similarity('Lijnmarkt.jpg', 'RandomHouse.jpg', interpreter, new_image_directory)
 print(f"Similarity score between Lijnmarkt.jpg and RandomHouse.jpg: {similarity:.2f}")
 
-similarity = test_similarity('RandomHouse.jpg', 'RandomHouse.jpg', siamese_model, new_image_directory)
+similarity = test_similarity('RandomHouse.jpg', 'RandomHouse.jpg', interpreter, new_image_directory)
 print(f"Similarity score between RandomHouse.jpg and RandomHouse.jpg: {similarity:.2f}")
 
-similarity = test_similarity('RandomHouse.jpg', 'RandomHouse_cropped.jpg', siamese_model, new_image_directory)
+similarity = test_similarity('RandomHouse.jpg', 'RandomHouse_cropped.jpg', interpreter, new_image_directory)
 print(f"Similarity score between RandomHouse.jpg and RandomHouse_cropped.jpg: {similarity:.2f}")
 
-similarity = test_similarity('Lijnmarkt.jpg', 'flip_Lijnmarkt_0_747.jpeg', siamese_model, new_image_directory)
+similarity = test_similarity('Lijnmarkt.jpg', 'flip_Lijnmarkt_0_747.jpeg', interpreter, new_image_directory)
 print(f"Similarity score between Lijnmarkt.jpg and Lijnmarkt-flipped.jpg: {similarity:.2f}")
