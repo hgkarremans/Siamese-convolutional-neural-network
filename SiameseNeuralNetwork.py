@@ -10,6 +10,9 @@ from keras.saving import register_keras_serializable
 from tqdm import tqdm
 from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, list_collections
 
+from ImageDataGenerator import ImageDataGenerator
+
+
 # Function to load and preprocess images
 def load_image(image_path, loaded_images):
     if image_path in loaded_images:
@@ -49,7 +52,7 @@ def load_data(csv_file, image_folder):
 
 # Define the base network for the Siamese model
 def build_base_model(input_shape):
-    input_layer = Input(shape=input_shape)
+    input_layer = Input(shape=input_shape, name='input_1')
 
     x = Conv2D(32, (10, 10), activation='relu')(input_layer)
     x = MaxPooling2D()(x)
@@ -73,8 +76,8 @@ def compute_l1_distance(tensors):
 def build_siamese_model(input_shape):
     base_model = build_base_model(input_shape)
 
-    input_a = Input(shape=input_shape)
-    input_b = Input(shape=input_shape)
+    input_a = Input(shape=input_shape, name='input_1')
+    input_b = Input(shape=input_shape, name='input_2')
 
     # Get embeddings for both inputs
     encoded_a = base_model(input_a)
@@ -110,15 +113,15 @@ model_file = 'siamese_model.keras'
 embedding_model_file = 'embedding_model.keras'
 
 if not os.path.exists(model_file):
-    # Load and preprocess data
+    # Define model file names
+    model_file = 'siamese_model.keras'
+    embedding_model_file = 'embedding_model.keras'
+
+    # Load and preprocess data using the generator
     csv_file = 'assets/training_data.csv'
     image_folder = 'assets/AugmentedImages'
-    image_pairs, labels = load_data(csv_file, image_folder)
-
-    # Split data into two input arrays
-    X1 = np.array([pair[0] for pair in image_pairs])
-    X2 = np.array([pair[1] for pair in image_pairs])
-    y = np.array(labels)
+    batch_size = 16
+    data_generator = ImageDataGenerator(csv_file, image_folder, batch_size)
 
     # Build the model
     input_shape = (128, 128, 3)
@@ -127,8 +130,8 @@ if not os.path.exists(model_file):
     # Compile the model
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
 
-    # Train the model
-    siamese_model.fit([X1, X2], y, batch_size=16, epochs=5, validation_split=0.2)
+    # Train the model using the generator
+    siamese_model.fit(data_generator, epochs=5, validation_data=data_generator)
 
     # Save the models
     siamese_model.save(model_file)
@@ -138,4 +141,3 @@ else:
     siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
     embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
-
