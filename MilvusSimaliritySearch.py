@@ -32,10 +32,10 @@ fields = [
 ]
 schema = CollectionSchema(fields, "HouseImages collection")
 
-# Drop the collection if it exists
-if "house_images" in list_collections():
-    collection = Collection("house_images")
-    collection.drop()
+# # Drop the collection if it exists
+# if "house_images" in list_collections():
+#     collection = Collection("house_images")
+#     collection.drop()
 
 # Create the collection
 collection = Collection("house_images", schema)
@@ -79,8 +79,8 @@ def insert_vectors(image_folder, model, collection: Collection):
     if vectors and image_names:
         # Assuming your collection schema has two fields: 'image_name' and 'vector'
         entities = [
-            image_names,  # Field 1: image names
-            vectors  # Field 2: vectors
+            vectors,
+            image_names
         ]
 
         collection.insert(entities)  # Insert entities into Milvus
@@ -89,7 +89,7 @@ def insert_vectors(image_folder, model, collection: Collection):
 
 # Example usage
 image_folder = 'assets/HouseImages'
-insert_vectors(image_folder, embedding_model, collection)
+# insert_vectors(image_folder, embedding_model, collection)
 
 # Create an index for faster search
 collection.create_index("embedding", {"index_type": "IVF_FLAT", "metric_type": "L2", "params": {"nlist": 128}})
@@ -104,14 +104,13 @@ def search_similar(image_path, model, top_k=1):
     if query_vector is None:
         print(f"Error: Unable to extract vector for image at {image_path}")
         return []
-    results = collection.search([query_vector.tolist()], "embedding", {"metric_type": "L2", "params": {"nprobe": 10}},
-                                limit=top_k)
+    results = collection.search([query_vector.tolist()], "embedding", {"metric_type": "L2", "params": {"nprobe": 10}}, limit=top_k, output_fields=["image_name"])
     return results
 
-# approx time taken is between 18ms to 80ms for 5 images
 # Example search
 results = search_similar('assets/HouseImages/Lijnmarkt.jpg', embedding_model)
 for result in results[0]:
     print("Matching Object Attributes:")
     for attr, value in result.entity.__dict__.items():
         print(f"{attr}: {value}")
+    print(f"Distance: {result.distance}")
