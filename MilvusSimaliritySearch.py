@@ -32,7 +32,7 @@ fields = [
 ]
 schema = CollectionSchema(fields, "HouseImages collection")
 
-# # Drop the collection if it exists
+# Drop the collection if it exists
 # if "house_images" in list_collections():
 #     collection = Collection("house_images")
 #     collection.drop()
@@ -87,8 +87,7 @@ def insert_vectors(image_folder, model, collection: Collection):
         print("Insertion complete!")
 
 
-# Example usage
-image_folder = 'assets/HouseImages'
+image_folder = 'assets/combinedImages'
 # insert_vectors(image_folder, embedding_model, collection)
 
 # Create an index for faster search
@@ -108,9 +107,8 @@ def search_similar(image_path, model, top_k=1):
     return results
 
 # Example search
-results = search_similar('assets/HouseImages/Lijnmarkt.jpg', embedding_model)
+results = search_similar('assets/HouseImages/flip_Lijnmarkt_0_747.jpeg', embedding_model)
 for result in results[0]:
     print("Matching Object Attributes:")
     for attr, value in result.entity.__dict__.items():
         print(f"{attr}: {value}")
-    print(f"Distance: {result.distance}")
