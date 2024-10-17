@@ -103,21 +103,23 @@ def test_similarity(image1_path, image2_path, model, image_folder):
     similarity_score = model.predict([img1, img2])[0][0]
     return similarity_score
 
-# Load and preprocess data
-csv_file = 'assets/training_data.csv'
-image_folder = 'assets/AugmentedImages'
-image_pairs, labels = load_data(csv_file, image_folder)
 
-# Split data into two input arrays
-X1 = np.array([pair[0] for pair in image_pairs])
-X2 = np.array([pair[1] for pair in image_pairs])
-y = np.array(labels)
 
 # Define model file names
 model_file = 'siamese_model.keras'
 embedding_model_file = 'embedding_model.keras'
 
 if not os.path.exists(model_file):
+    # Load and preprocess data
+    csv_file = 'assets/training_data.csv'
+    image_folder = 'assets/AugmentedImages'
+    image_pairs, labels = load_data(csv_file, image_folder)
+
+    # Split data into two input arrays
+    X1 = np.array([pair[0] for pair in image_pairs])
+    X2 = np.array([pair[1] for pair in image_pairs])
+    y = np.array(labels)
+
     # Build the model
     input_shape = (128, 128, 3)
     siamese_model, embedding_model = build_siamese_model(input_shape)

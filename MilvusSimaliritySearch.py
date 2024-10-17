@@ -2,10 +2,11 @@ import os
 import cv2
 import numpy as np
 from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, list_collections
-from tensorflow.keras.models import load_model
 from keras.saving import register_keras_serializable
 import tensorflow as tf
 from tqdm import tqdm
+from tensorflow.keras.models import load_model
+from SiameseNeuralNetwork import load_image
 
 
 # Define the Lambda function outside the model to ensure tf is in scope
@@ -98,7 +99,7 @@ collection.load()
 
 
 # Function to search for similar vectors
-def search_similar(image_path, model, top_k=1):
+def search_similar(image_path, model, top_k=5):
     query_vector = extract_vector(image_path, model)
     if query_vector is None:
         print(f"Error: Unable to extract vector for image at {image_path}")
@@ -106,9 +107,48 @@ def search_similar(image_path, model, top_k=1):
     results = collection.search([query_vector.tolist()], "embedding", {"metric_type": "L2", "params": {"nprobe": 10}}, limit=top_k, output_fields=["image_name"])
     return results
 
-# Example search
-results = search_similar('assets/HouseImages/flip_Lijnmarkt_0_747.jpeg', embedding_model)
-for result in results[0]:
-    print("Matching Object Attributes:")
-    for attr, value in result.entity.__dict__.items():
-        print(f"{attr}: {value}")
+
+SEARCH_SIMILAR = search_similar('assets/HouseImages/flip_Lijnmarkt_0_747.jpeg', embedding_model)
+
+# search in the collection
+# results = SEARCH_SIMILAR
+# for result in results[0]:
+#     print("Matching Object Attributes:")
+#     for attr, value in result.entity.__dict__.items():
+#         print(f"{attr}: {value}")
+
+
+
+# Function to test the similarity between two images
+def test_similarity(image1_path, image2_path, model, image_folder):
+    loaded_images = {}
+    img1 = load_image(os.path.join(image_folder, image1_path), loaded_images)
+    img2 = load_image(os.path.join(image_folder, image2_path), loaded_images)
+
+    img1 = np.expand_dims(img1, axis=0)
+    img2 = np.expand_dims(img2, axis=0)
+
+    similarity_score = model.predict([img1, img2])[0][0]
+    return similarity_score
+
+# simalirity test
+pikachu = 'pikachu.jpeg'
+lijnmarkt = 'Lijnmarkt.jpg'
+lijnmarktKopie = 'LijnmarktKopie.jpg'
+flippedLijnmarkt = 'flip_Lijnmarkt_0_747.jpeg'
+randomHouse = 'RandomHouse.jpg'
+randomHouseCropped = 'RandomHouse_cropped.jpg'
+randomHouseLessCropped = 'RandomHouse_less_cropped.jpg'
+randomHouseColor = 'RandomHouse_different_color.jpg'
+RandomHouseRotated = 'RandomHouse_rotated.jpg'
+RandomHouseWatermark = 'randomhouse_watermark.png'
+print(f"Similarity score between {pikachu} and {lijnmarkt}: {test_similarity(pikachu, lijnmarkt, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {lijnmarkt} and {lijnmarktKopie}: {test_similarity(lijnmarkt, lijnmarktKopie, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {lijnmarkt} and {flippedLijnmarkt}: {test_similarity(lijnmarkt, flippedLijnmarkt, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {randomHouseCropped}: {test_similarity(randomHouse, randomHouseCropped, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {randomHouseLessCropped}: {test_similarity(randomHouse, randomHouseLessCropped, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {randomHouseColor}: {test_similarity(randomHouse, randomHouseColor, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {RandomHouseRotated}: {test_similarity(randomHouse, RandomHouseRotated, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {RandomHouseWatermark}: {test_similarity(randomHouse, RandomHouseWatermark, siamese_model, 'assets/HouseImages')}")
+
+
