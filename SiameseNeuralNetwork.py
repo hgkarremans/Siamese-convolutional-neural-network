@@ -156,7 +156,7 @@ input_shape = (128, 128, 3)
 model_file = 'siamese_model.keras'
 
 # Train the model using lazy loading, small batches, and with validation accuracy
-siamese_model = train_model(csv_file, image_folder, model_file, input_shape, batch_size=16, epochs=10, val_split=0.2)
+siamese_model = train_model(csv_file, image_folder, model_file, input_shape, batch_size=32, epochs=10, val_split=0.2)
 
 pikachu = 'pikachu.jpeg'
 lijnmarkt = 'Lijnmarkt.jpg'
