@@ -58,35 +58,23 @@ def create_dataset(csv_file, image_folder, batch_size, val_split=0.2):
 
 # --- Model Definition ---
 
-import tensorflow as tf
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
-from tensorflow.keras.models import Model
-
-
 def build_base_model(input_shape):
-    input_layer = Input(shape=input_shape)
+    input_layer = Input(shape=input_shape, name='input_1')
 
-    # Convolutional Block 1
     x = Conv2D(32, (10, 10), activation='relu')(input_layer)
     x = MaxPooling2D()(x)
-    x = BatchNormalization()(x)
 
-    # Convolutional Block 2
     x = Conv2D(64, (7, 7), activation='relu')(x)
     x = MaxPooling2D()(x)
-    x = BatchNormalization()(x)
 
-    # Convolutional Block 3
     x = Conv2D(128, (4, 4), activation='relu')(x)
     x = MaxPooling2D()(x)
-    x = BatchNormalization()(x)
 
     x = Flatten()(x)
-    x = Dense(128, activation='relu')(x)
-    x = Dropout(0.5)(x)  # Adding dropout to reduce overfitting
-    output_layer = Dense(128, activation='sigmoid')(x)  # You can also try 'relu' here
+    # Use linear activation to allow output beyond [0, 1]
+    x = Dense(128, activation='linear')(x)
 
-    return Model(inputs=input_layer, outputs=output_layer)
+    return Model(inputs=input_layer, outputs=x)
 
 
 def compute_l1_distance(tensors):
@@ -168,7 +156,7 @@ input_shape = (128, 128, 3)
 model_file = 'siamese_model.keras'
 
 # Train the model using lazy loading, small batches, and with validation accuracy
-siamese_model = train_model(csv_file, image_folder, model_file, input_shape, batch_size=50, epochs=20, val_split=0.2)
+siamese_model = train_model(csv_file, image_folder, model_file, input_shape, batch_size=16, epochs=10, val_split=0.2)
 
 pikachu = 'pikachu.jpeg'
 lijnmarkt = 'Lijnmarkt.jpg'
