@@ -131,7 +131,7 @@ if not os.path.exists(model_file):
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
 
     # Train the model using the generator
-    siamese_model.fit(data_generator, epochs=5, validation_data=data_generator)
+    siamese_model.fit(data_generator, epochs=10 , validation_data=data_generator)
 
     # Save the models
     siamese_model.save(model_file)
