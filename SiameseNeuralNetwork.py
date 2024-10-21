@@ -6,6 +6,7 @@ import cv2
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Lambda, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping
 from tqdm import tqdm
 
 
@@ -123,8 +124,20 @@ def train_model(csv_file, image_folder, model_file, input_shape, batch_size=4, e
             metrics=['accuracy']
         )
 
-        # Train the model with validation
-        siamese_model.fit(train_dataset, validation_data=val_dataset, epochs=epochs)
+        # Define early stopping callback
+        early_stopping = EarlyStopping(
+            monitor='val_loss',  # You can also monitor 'val_accuracy'
+            patience=5,  # Number of epochs with no improvement after which training will be stopped
+            restore_best_weights=True  # Restore model weights from the epoch with the best value of the monitored quantity
+        )
+
+        # Train the model with validation and early stopping
+        siamese_model.fit(
+            train_dataset,
+            validation_data=val_dataset,
+            epochs=epochs,
+            callbacks=[early_stopping]
+        )
         siamese_model.save(model_file)
     else:
         # Load the model if it already exists
@@ -155,11 +168,23 @@ input_shape = (128, 128, 3)
 model_file = 'siamese_model.keras'
 
 # Train the model using lazy loading, small batches, and with validation accuracy
-siamese_model = train_model(csv_file, image_folder, model_file, input_shape, batch_size=4, epochs=5, val_split=0.2)
+siamese_model = train_model(csv_file, image_folder, model_file, input_shape, batch_size=50, epochs=20, val_split=0.2)
 
-# Test the model with two images
-new_image_directory = 'assets/HouseImages'
-image1 = 'Lijnmarkt.jpg'
-image2 = 'LijnmarktKopie.jpg'
-similarity = test_similarity(image1, image2, siamese_model, new_image_directory)
-print(f"Similarity score between {image1} and {image2}: {similarity:.2f}")
+pikachu = 'pikachu.jpeg'
+lijnmarkt = 'Lijnmarkt.jpg'
+lijnmarktKopie = 'LijnmarktKopie.jpg'
+flippedLijnmarkt = 'flip_Lijnmarkt_0_747.jpeg'
+randomHouse = 'RandomHouse.jpg'
+randomHouseCropped = 'RandomHouse_cropped.jpg'
+randomHouseLessCropped = 'RandomHouse_less_cropped.jpg'
+randomHouseColor = 'RandomHouse_different_color.jpg'
+RandomHouseRotated = 'RandomHouse_rotated.jpg'
+RandomHouseWatermark = 'randomhouse_watermark.png'
+print(f"Similarity score between {pikachu} and {lijnmarkt}: {test_similarity(pikachu, lijnmarkt, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {lijnmarkt} and {lijnmarktKopie}: {test_similarity(lijnmarkt, lijnmarktKopie, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {lijnmarkt} and {flippedLijnmarkt}: {test_similarity(lijnmarkt, flippedLijnmarkt, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {randomHouseCropped}: {test_similarity(randomHouse, randomHouseCropped, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {randomHouseLessCropped}: {test_similarity(randomHouse, randomHouseLessCropped, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {randomHouseColor}: {test_similarity(randomHouse, randomHouseColor, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {RandomHouseRotated}: {test_similarity(randomHouse, RandomHouseRotated, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {RandomHouseWatermark}: {test_similarity(randomHouse, RandomHouseWatermark, siamese_model, 'assets/HouseImages')}")
