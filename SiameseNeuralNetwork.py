@@ -1,104 +1,118 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Lambda
-from tensorflow.keras.models import Model, load_model
-from tensorflow.keras.optimizers import Adam
+import os
 import pandas as pd
 import numpy as np
 import cv2
-import os
-from keras.saving import register_keras_serializable
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Lambda
+from tensorflow.keras.optimizers import Adam
 from tqdm import tqdm
-from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, list_collections
-
-from ImageDataGenerator import ImageDataGenerator
 
 
-# Function to load and preprocess images
-def load_image(image_path, loaded_images):
-    if image_path in loaded_images:
-        return loaded_images[image_path]
+# --- Data Loading with tf.data ---
 
-    img = cv2.imread(image_path)
-    if img is None:
-        raise FileNotFoundError(f"Image at path '{image_path}' could not be loaded.")
-    img = cv2.resize(img, (128, 128))  # Resize to the input size
-    img = img.astype('float32') / 255.0  # Normalize pixel values to [0, 1]
-
-    loaded_images[image_path] = img
+def preprocess_image(image_path):
+    """ Function to load and preprocess a single image """
+    img = tf.io.read_file(image_path)
+    img = tf.image.decode_jpeg(img, channels=3)  # Adjust based on your image type
+    img = tf.image.resize(img, (128, 128))  # Resize to the input size
+    img = img / 255.0  # Normalize pixel values to [0, 1]
     return img
 
-# Load data from CSV and prepare image pairs and labels
-def load_data(csv_file, image_folder):
+
+def preprocess_pair(img1_path, img2_path, label):
+    """ Preprocess two images and a label """
+    img1 = preprocess_image(img1_path)
+    img2 = preprocess_image(img2_path)
+    return (img1, img2), label
+
+
+def create_dataset(csv_file, image_folder, batch_size):
+    """ Create a tf.data.Dataset from the CSV file """
     data = pd.read_csv(csv_file)
-    image_pairs = []
-    labels = []
-    loaded_images = {}
 
-    for idx, row in tqdm(data.iterrows(), total=len(data), desc="Loading images"):
-        img1_path = os.path.join(image_folder, row['Image1'])
-        img2_path = os.path.join(image_folder, row['Image2'])
+    img1_paths = [os.path.join(image_folder, img) for img in data['Image1']]
+    img2_paths = [os.path.join(image_folder, img) for img in data['Image2']]
+    labels = data['Label'].values
 
-        try:
-            img1 = load_image(img1_path, loaded_images)
-            img2 = load_image(img2_path, loaded_images)
-        except FileNotFoundError as e:
-            print(e)
-            continue
+    # Convert to tf.data.Dataset
+    dataset = tf.data.Dataset.from_tensor_slices((img1_paths, img2_paths, labels))
 
-        image_pairs.append([img1, img2])
-        labels.append(row['Label'])
+    # Shuffle, preprocess, batch, and prefetch
+    dataset = dataset.shuffle(buffer_size=len(labels))
+    dataset = dataset.map(lambda img1, img2, label: preprocess_pair(img1, img2, label),
+                          num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)  # Prefetch for efficiency
 
-    return np.array(image_pairs), np.array(labels)
+    return dataset
 
-# Define the base network for the Siamese model
+
+# --- Model Definition ---
+
 def build_base_model(input_shape):
-    input_layer = Input(shape=input_shape, name='input_1')
-
+    input_layer = Input(shape=input_shape)
     x = Conv2D(32, (10, 10), activation='relu')(input_layer)
     x = MaxPooling2D()(x)
-
     x = Conv2D(64, (7, 7), activation='relu')(x)
     x = MaxPooling2D()(x)
-
     x = Conv2D(128, (4, 4), activation='relu')(x)
     x = MaxPooling2D()(x)
-
     x = Flatten()(x)
-    x = Dense(128, activation='sigmoid')(x)
+    output_layer = Dense(128, activation='sigmoid')(x)
+    return Model(inputs=input_layer, outputs=output_layer)
 
-    return Model(inputs=input_layer, outputs=x)
 
-# Define the Lambda function for L1 distance
-@register_keras_serializable()
 def compute_l1_distance(tensors):
     return tf.abs(tensors[0] - tensors[1])
+
 
 def build_siamese_model(input_shape):
     base_model = build_base_model(input_shape)
 
-    input_a = Input(shape=input_shape, name='input_1')
-    input_b = Input(shape=input_shape, name='input_2')
+    input_a = Input(shape=input_shape)
+    input_b = Input(shape=input_shape)
 
-    # Get embeddings for both inputs
     encoded_a = base_model(input_a)
     encoded_b = base_model(input_b)
 
-    # Compute the L1 distance between the two encodings
-    l1_distance = Lambda(compute_l1_distance)([encoded_a, encoded_b])
+    l1_layer = Lambda(compute_l1_distance)([encoded_a, encoded_b])
+    output_layer = Dense(1, activation='sigmoid')(l1_layer)
 
-    # Add a Dense layer with a single unit and sigmoid activation
-    output = Dense(1, activation='sigmoid')(l1_distance)
+    siamese_model = Model(inputs=[input_a, input_b], outputs=output_layer)
+    return siamese_model
 
-    # Model to output the 128-dimensional embedding for a single image
-    embedding_model = Model(inputs=input_a, outputs=encoded_a)
 
-    return Model(inputs=[input_a, input_b], outputs=output), embedding_model
+# --- Train Function ---
 
-# Function to test the similarity between two images
+def train_model(csv_file, image_folder, model_file, input_shape, batch_size=4, epochs=5):
+    # Create dataset
+    dataset = create_dataset(csv_file, image_folder, batch_size)
+
+    if not os.path.exists(model_file):
+        # Build and compile the Siamese model
+        siamese_model = build_siamese_model(input_shape)
+        siamese_model.compile(
+            loss='binary_crossentropy',
+            optimizer=Adam(learning_rate=0.0001),
+            metrics=['accuracy']
+        )
+
+        # Train the model using the tf.data dataset
+        siamese_model.fit(dataset, epochs=epochs)
+        siamese_model.save(model_file)
+    else:
+        # Load the model if it already exists
+        siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance})
+
+    return siamese_model
+
+
+# --- Test Similarity ---
+
 def test_similarity(image1_path, image2_path, model, image_folder):
-    loaded_images = {}
-    img1 = load_image(os.path.join(image_folder, image1_path), loaded_images)
-    img2 = load_image(os.path.join(image_folder, image2_path), loaded_images)
+    img1 = preprocess_image(os.path.join(image_folder, image1_path))
+    img2 = preprocess_image(os.path.join(image_folder, image2_path))
 
     img1 = np.expand_dims(img1, axis=0)
     img2 = np.expand_dims(img2, axis=0)
@@ -107,37 +121,19 @@ def test_similarity(image1_path, image2_path, model, image_folder):
     return similarity_score
 
 
+# --- Main Execution ---
 
-# Define model file names
+csv_file = 'assets/training_data.csv'
+image_folder = 'assets/AugmentedImages'
+input_shape = (128, 128, 3)
 model_file = 'siamese_model.keras'
-embedding_model_file = 'embedding_model.keras'
 
-if not os.path.exists(model_file):
-    # Define model file names
-    model_file = 'siamese_model.keras'
-    embedding_model_file = 'embedding_model.keras'
+# Train the model using lazy loading and small batches
+siamese_model = train_model(csv_file, image_folder, model_file, input_shape)
 
-    # Load and preprocess data using the generator
-    csv_file = 'assets/training_data.csv'
-    image_folder = 'assets/AugmentedImages'
-    batch_size = 16
-    data_generator = ImageDataGenerator(csv_file, image_folder, batch_size)
-
-    # Build the model
-    input_shape = (128, 128, 3)
-    siamese_model, embedding_model = build_siamese_model(input_shape)
-
-    # Compile the model
-    siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
-
-    # Train the model using the generator
-    siamese_model.fit(data_generator, epochs=5, validation_data=data_generator)
-
-    # Save the models
-    siamese_model.save(model_file)
-    embedding_model.save(embedding_model_file)
-else:
-    # Load the trained models with custom objects
-    siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
-    embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
-    siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
+# Test the model with two images
+new_image_directory = 'assets/HouseImages'
+image1 = 'Lijnmarkt.jpg'
+image2 = 'LijnmarktKopie.jpg'
+similarity = test_similarity(image1, image2, siamese_model, new_image_directory)
+print(f"Similarity score between {image1} and {image2}: {similarity:.2f}")
