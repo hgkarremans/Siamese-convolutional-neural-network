@@ -3,5 +3,9 @@
   <component name="Black">
     <option name="sdkName" value="$USER_HOME$/miniconda3" />
   </component>
+<<<<<<< Updated upstream
   <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.10 (Siamese-convolutional-neural-network)" project-jdk-type="Python SDK" />
+=======
+  <component name="ProjectRootManager" version="2" project-jdk-name="C:\Users\hgkar\miniconda3" project-jdk-type="Python SDK" />
+>>>>>>> Stashed changes
 </project>

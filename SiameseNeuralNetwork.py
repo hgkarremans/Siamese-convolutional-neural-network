@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import cv2
 from tensorflow.keras.models import Model, load_model
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Lambda
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Lambda, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
 from tqdm import tqdm
 
@@ -27,8 +27,8 @@ def preprocess_pair(img1_path, img2_path, label):
     return (img1, img2), label
 
 
-def create_dataset(csv_file, image_folder, batch_size):
-    """ Create a tf.data.Dataset from the CSV file """
+def create_dataset(csv_file, image_folder, batch_size, val_split=0.2):
+    """ Create a tf.data.Dataset from the CSV file, and split it into training and validation sets """
     data = pd.read_csv(csv_file)
 
     img1_paths = [os.path.join(image_folder, img) for img in data['Image1']]
@@ -38,28 +38,53 @@ def create_dataset(csv_file, image_folder, batch_size):
     # Convert to tf.data.Dataset
     dataset = tf.data.Dataset.from_tensor_slices((img1_paths, img2_paths, labels))
 
-    # Shuffle, preprocess, batch, and prefetch
+    # Shuffle, preprocess, and batch the dataset
     dataset = dataset.shuffle(buffer_size=len(labels))
     dataset = dataset.map(lambda img1, img2, label: preprocess_pair(img1, img2, label),
                           num_parallel_calls=tf.data.AUTOTUNE)
-    dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)  # Prefetch for efficiency
 
-    return dataset
+    # Calculate the number of training samples
+    num_samples = len(labels)
+    val_size = int(val_split * num_samples)
+    train_size = num_samples - val_size
+
+    # Split the dataset into training and validation sets
+    train_dataset = dataset.take(train_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    val_dataset = dataset.skip(train_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+    return train_dataset, val_dataset
 
 
 # --- Model Definition ---
 
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+from tensorflow.keras.models import Model
+
+
 def build_base_model(input_shape):
     input_layer = Input(shape=input_shape)
+
+    # Convolutional Block 1
     x = Conv2D(32, (10, 10), activation='relu')(input_layer)
     x = MaxPooling2D()(x)
+    x = BatchNormalization()(x)
+
+    # Convolutional Block 2
     x = Conv2D(64, (7, 7), activation='relu')(x)
     x = MaxPooling2D()(x)
+    x = BatchNormalization()(x)
+
+    # Convolutional Block 3
     x = Conv2D(128, (4, 4), activation='relu')(x)
     x = MaxPooling2D()(x)
+    x = BatchNormalization()(x)
+
     x = Flatten()(x)
-    output_layer = Dense(128, activation='sigmoid')(x)
+    x = Dense(128, activation='relu')(x)
+    x = Dropout(0.5)(x)  # Adding dropout to reduce overfitting
+    output_layer = Dense(128, activation='sigmoid')(x)  # You can also try 'relu' here
+
     return Model(inputs=input_layer, outputs=output_layer)
 
 
@@ -85,9 +110,9 @@ def build_siamese_model(input_shape):
 
 # --- Train Function ---
 
-def train_model(csv_file, image_folder, model_file, input_shape, batch_size=4, epochs=5):
-    # Create dataset
-    dataset = create_dataset(csv_file, image_folder, batch_size)
+def train_model(csv_file, image_folder, model_file, input_shape, batch_size=4, epochs=5, val_split=0.2):
+    # Create training and validation datasets
+    train_dataset, val_dataset = create_dataset(csv_file, image_folder, batch_size, val_split)
 
     if not os.path.exists(model_file):
         # Build and compile the Siamese model
@@ -98,8 +123,8 @@ def train_model(csv_file, image_folder, model_file, input_shape, batch_size=4, e
             metrics=['accuracy']
         )
 
-        # Train the model using the tf.data dataset
-        siamese_model.fit(dataset, epochs=epochs)
+        # Train the model with validation
+        siamese_model.fit(train_dataset, validation_data=val_dataset, epochs=epochs)
         siamese_model.save(model_file)
     else:
         # Load the model if it already exists
@@ -123,13 +148,14 @@ def test_similarity(image1_path, image2_path, model, image_folder):
 
 # --- Main Execution ---
 
+
 csv_file = 'assets/training_data.csv'
 image_folder = 'assets/AugmentedImages'
 input_shape = (128, 128, 3)
 model_file = 'siamese_model.keras'
 
-# Train the model using lazy loading and small batches
-siamese_model = train_model(csv_file, image_folder, model_file, input_shape)
+# Train the model using lazy loading, small batches, and with validation accuracy
+siamese_model = train_model(csv_file, image_folder, model_file, input_shape, batch_size=4, epochs=5, val_split=0.2)
 
 # Test the model with two images
 new_image_directory = 'assets/HouseImages'
