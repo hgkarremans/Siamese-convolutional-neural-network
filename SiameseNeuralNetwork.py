@@ -155,7 +155,7 @@ def test_similarity(image1_path, image2_path, model, image_folder):
 csv_file = 'assets/training_data.csv'
 image_folder = 'assets/AugmentedImages'
 input_shape = (128, 128, 3)
-model_file = 'siamese_model.h5'
+model_file = 'siamese_model'
 
 # Train the model using lazy loading, small batches, and with validation accuracy
 siamese_model = train_model(csv_file, image_folder, model_file, input_shape, batch_size=32, epochs=10, val_split=0.2)

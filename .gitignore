@@ -4,3 +4,5 @@ milvus_demo.db
 standalone_embed.sh
 user.yaml
 volumes
+embedding_model.keras
+siamese_model.h5
