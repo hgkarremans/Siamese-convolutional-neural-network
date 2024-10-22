@@ -126,7 +126,8 @@ def train_model(csv_file, image_folder, model_file, input_shape, batch_size=4, e
             epochs=epochs,
             callbacks=[early_stopping]
         )
-        siamese_model.save(model_file)
+        # Save the model in the SavedModel format
+        siamese_model.save(model_file, save_format='tf')
     else:
         # Load the model if it already exists
         siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance})
