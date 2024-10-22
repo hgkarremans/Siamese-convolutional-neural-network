@@ -132,6 +132,7 @@ def train_model(csv_file, image_folder, model_file, input_shape, batch_size=4, e
         # Load the model if it already exists
         siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance})
 
+
     return siamese_model
 
 
@@ -154,7 +155,7 @@ def test_similarity(image1_path, image2_path, model, image_folder):
 csv_file = 'assets/training_data.csv'
 image_folder = 'assets/AugmentedImages'
 input_shape = (128, 128, 3)
-model_file = 'siamese_model.keras'
+model_file = 'siamese_model.h5'
 
 # Train the model using lazy loading, small batches, and with validation accuracy
 siamese_model = train_model(csv_file, image_folder, model_file, input_shape, batch_size=32, epochs=10, val_split=0.2)
