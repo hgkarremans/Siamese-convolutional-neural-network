@@ -63,7 +63,8 @@ def build_base_model(input_shape):
     x = MaxPooling2D()(x)
 
     x = Flatten()(x)
-    x = Dense(128, activation='sigmoid')(x)
+    # Use linear activation to allow output beyond [0, 1]
+    x = Dense(128, activation='linear')(x)
 
     return Model(inputs=input_layer, outputs=x)
 
