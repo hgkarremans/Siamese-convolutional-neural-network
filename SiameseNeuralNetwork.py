@@ -6,12 +6,11 @@ import pandas as pd
 import numpy as np
 import cv2
 import os
-from keras.saving import register_keras_serializable
+from tensorflow.keras.utils import register_keras_serializable
 from tqdm import tqdm
 from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, list_collections
 
 from ImageDataGenerator import ImageDataGenerator
-
 
 # Function to load and preprocess images
 def load_image(image_path, loaded_images):
@@ -138,6 +137,41 @@ if not os.path.exists(model_file):
     embedding_model.save(embedding_model_file)
 else:
     # Load the trained models with custom objects
-    siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
-    embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
+    siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance})
+    embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance})
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
+
+
+# Function to test the similarity between two images
+def test_similarity(image1_path, image2_path, model, image_folder):
+    loaded_images = {}
+    img1 = load_image(os.path.join(image_folder, image1_path), loaded_images)
+    img2 = load_image(os.path.join(image_folder, image2_path), loaded_images)
+
+    img1 = np.expand_dims(img1, axis=0)
+    img2 = np.expand_dims(img2, axis=0)
+
+    similarity_score = model.predict([img1, img2])[0][0]
+    return similarity_score
+
+# # simalirity test
+pikachu = 'pikachu.jpeg'
+lijnmarkt = 'Lijnmarkt.jpg'
+lijnmarktKopie = 'LijnmarktKopie.jpg'
+flippedLijnmarkt = 'flip_Lijnmarkt_0_747.jpeg'
+randomHouse = 'RandomHouse.jpg'
+randomHouseCropped = 'RandomHouse_cropped.jpg'
+randomHouseLessCropped = 'RandomHouse_less_cropped.jpg'
+randomHouseColor = 'RandomHouse_different_color.jpg'
+RandomHouseRotated = 'RandomHouse_rotated.jpg'
+RandomHouseWatermark = 'randomhouse_watermark.png'
+print(f"Similarity score between {pikachu} and {lijnmarkt}: {test_similarity(pikachu, lijnmarkt, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {lijnmarkt} and {lijnmarktKopie}: {test_similarity(lijnmarkt, lijnmarktKopie, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {lijnmarkt} and {flippedLijnmarkt}: {test_similarity(lijnmarkt, flippedLijnmarkt, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {randomHouseCropped}: {test_similarity(randomHouse, randomHouseCropped, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {randomHouseLessCropped}: {test_similarity(randomHouse, randomHouseLessCropped, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {randomHouseColor}: {test_similarity(randomHouse, randomHouseColor, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {RandomHouseRotated}: {test_similarity(randomHouse, RandomHouseRotated, siamese_model, 'assets/HouseImages')}")
+print(f"Similarity score between {randomHouse} and {RandomHouseWatermark}: {test_similarity(randomHouse, RandomHouseWatermark, siamese_model, 'assets/HouseImages')}")
+
+
