@@ -98,17 +98,39 @@ collection.create_index("embedding", {"index_type": "IVF_FLAT", "metric_type": "
 collection.load()
 
 
-# Function to search for similar vectors
+def l2_to_similarity(l2_distance):
+    # Convert L2 distance to similarity score (0 to 1)
+    return np.exp(-l2_distance)
+
+
 def search_similar(image_path, model, top_k=1):
     query_vector = extract_vector(image_path, model)
     if query_vector is None:
         print(f"Error: Unable to extract vector for image at {image_path}")
         return []
-    results = collection.search([query_vector.tolist()], "embedding", {"metric_type": "L2", "params": {"nprobe": 10}}, limit=top_k, output_fields=["image_name"])
-    return results
+
+    results = collection.search(
+        [query_vector.tolist()],
+        "embedding",
+        {"metric_type": "L2", "params": {"nprobe": 10}},
+        limit=top_k,
+        output_fields=["image_name"]
+    )
+
+    # Convert L2 distances to similarity scores
+    similarity_results = []
+    for result in results[0]:
+        l2_distance = result.distance
+        similarity_score = l2_to_similarity(l2_distance)
+        similarity_results.append((result.entity.image_name, similarity_score))
+
+    return similarity_results
 
 
+# Example usage
 SEARCH_SIMILAR = search_similar('assets/HouseImages/flip_Lijnmarkt_0_747.jpeg', embedding_model)
+for image_name, similarity_score in SEARCH_SIMILAR:
+    print(f"Image: {image_name}, Similarity Score: {similarity_score}")
 
 # search in the collection
 results = SEARCH_SIMILAR

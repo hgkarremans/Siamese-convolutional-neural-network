@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Lambda
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Lambda, Dropout
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.optimizers import Adam
 import pandas as pd
@@ -63,7 +63,7 @@ def build_base_model(input_shape):
     x = MaxPooling2D()(x)
 
     x = Flatten()(x)
-    # Use linear activation to allow output beyond [0, 1]
+    x = Dropout(0.5)(x)
     x = Dense(128, activation='linear')(x)
 
     return Model(inputs=input_layer, outputs=x)
@@ -131,7 +131,7 @@ if not os.path.exists(model_file):
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
 
     # Train the model using the generator
-    siamese_model.fit(data_generator, epochs=10 , validation_data=data_generator)
+    siamese_model.fit(data_generator, epochs=20 , validation_data=data_generator)
 
     # Save the models
     siamese_model.save(model_file)
