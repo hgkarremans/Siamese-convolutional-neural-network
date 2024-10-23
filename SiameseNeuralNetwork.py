@@ -7,27 +7,18 @@ import numpy as np
 import cv2
 import os
 from keras.saving import register_keras_serializable
+from tensorflow.python.layers.core import Dropout
 from tqdm import tqdm
-from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, list_collections
 
 from ImageDataGenerator import ImageDataGenerator
+from utils import load_image
 
+# Function to calculate L1 distance between two tensors (Manhattan distance)
+@register_keras_serializable()
+def compute_l1_distance(tensors):
+    return tf.abs(tensors[0] - tensors[1])
 
-# Function to load and preprocess images
-def load_image(image_path, loaded_images):
-    if image_path in loaded_images:
-        return loaded_images[image_path]
-
-    img = cv2.imread(image_path)
-    if img is None:
-        raise FileNotFoundError(f"Image at path '{image_path}' could not be loaded.")
-    img = cv2.resize(img, (128, 128))  # Resize to the input size
-    img = img.astype('float32') / 255.0  # Normalize pixel values to [0, 1]
-
-    loaded_images[image_path] = img
-    return img
-
-# Load data from CSV and prepare image pairs and labels
+# Load data from CSV and prepare image pairs and labels for training
 def load_data(csv_file, image_folder):
     data = pd.read_csv(csv_file)
     image_pairs = []
@@ -54,7 +45,10 @@ def load_data(csv_file, image_folder):
 def build_base_model(input_shape):
     input_layer = Input(shape=input_shape, name='input_1')
 
+    # Define the convolutional layers with neurons and filters
+    # https://medium.com/advanced-deep-learning/cnn-operation-with-2-kernels-resulting-in-2-feature-mapsunderstanding-the-convolutional-filter-c4aad26cf32
     x = Conv2D(32, (10, 10), activation='relu')(input_layer)
+    # Downsample the output of the convolutional layers https://keras.io/api/layers/pooling_layers/max_pooling2d/
     x = MaxPooling2D()(x)
 
     x = Conv2D(64, (7, 7), activation='relu')(x)
@@ -63,19 +57,22 @@ def build_base_model(input_shape):
     x = Conv2D(128, (4, 4), activation='relu')(x)
     x = MaxPooling2D()(x)
 
+    # Flatten the output of the convolutional layers to feed into the dense layers https://www.educative.io/answers/what-is-a-neural-network-flatten-layer
     x = Flatten()(x)
-    x = Dense(128, activation='sigmoid')(x)
+    # Dropout is a regularization technique to prevent overfitting https://towardsdatascience.com/dropout-in-neural-networks-47a162d621d9
+    x = Dropout(0.5)(x)
+    # Layer with 128 fully connected neurons to output 128-dimensional embeddings using linear activation function to
+    # calculate the L1 distance between the embeddings
+    x = Dense(128, activation='linear')(x)
 
     return Model(inputs=input_layer, outputs=x)
 
-# Define the Lambda function for L1 distance
-@register_keras_serializable()
-def compute_l1_distance(tensors):
-    return tf.abs(tensors[0] - tensors[1])
-
+#define the neuron network for the Siamese model
 def build_siamese_model(input_shape):
+    # Build the base model
     base_model = build_base_model(input_shape)
 
+    # Define the two input layers
     input_a = Input(shape=input_shape, name='input_1')
     input_b = Input(shape=input_shape, name='input_2')
 
@@ -94,7 +91,7 @@ def build_siamese_model(input_shape):
 
     return Model(inputs=[input_a, input_b], outputs=output), embedding_model
 
-# Function to test the similarity between two images
+# Function to test the similarity between two images used for testing while training network
 def test_similarity(image1_path, image2_path, model, image_folder):
     loaded_images = {}
     img1 = load_image(os.path.join(image_folder, image1_path), loaded_images)
@@ -106,16 +103,12 @@ def test_similarity(image1_path, image2_path, model, image_folder):
     similarity_score = model.predict([img1, img2])[0][0]
     return similarity_score
 
-
-
 # Define model file names
 model_file = 'siamese_model.keras'
 embedding_model_file = 'embedding_model.keras'
 
+# check if model already exists otherwise train the model
 if not os.path.exists(model_file):
-    # Define model file names
-    model_file = 'siamese_model.keras'
-    embedding_model_file = 'embedding_model.keras'
 
     # Load and preprocess data using the generator
     csv_file = 'assets/training_data.csv'
@@ -127,17 +120,33 @@ if not os.path.exists(model_file):
     input_shape = (128, 128, 3)
     siamese_model, embedding_model = build_siamese_model(input_shape)
 
-    # Compile the model
+    # Compile the model with binary crossentropy loss and Adam optimizer
+    #https://towardsdatascience.com/understanding-binary-cross-entropy-log-loss-a-visual-explanation-a3ac6025181a
+    # small learning rate to avoid overshooting the weight change to avoid overfitting
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
 
     # Train the model using the generator
+    # Epoch is the number of times the model will see the entire dataset
     siamese_model.fit(data_generator, epochs=10 , validation_data=data_generator)
 
     # Save the models
     siamese_model.save(model_file)
     embedding_model.save(embedding_model_file)
+# if model already exists load the model to avoid training again
 else:
     # Load the trained models with custom objects
     siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
     embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
+
+# Function to test the similarity between two images
+def test_similarity(image1_path, image2_path, model, image_folder):
+    loaded_images = {}
+    img1 = load_image(os.path.join(image_folder, image1_path), loaded_images)
+    img2 = load_image(os.path.join(image_folder, image2_path), loaded_images)
+
+    img1 = np.expand_dims(img1, axis=0)
+    img2 = np.expand_dims(img2, axis=0)
+
+    similarity_score = model.predict([img1, img2])[0][0]
+    return similarity_score

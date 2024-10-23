@@ -8,7 +8,7 @@ from tqdm import tqdm
 from tensorflow.keras.models import load_model
 from SiameseNeuralNetwork import load_image
 
-
+# Function to calculate L1 distance between two tensors (Manhattan distance)
 @register_keras_serializable()
 def compute_l1_distance(tensors):
     return tf.abs(tensors[0] - tensors[1])

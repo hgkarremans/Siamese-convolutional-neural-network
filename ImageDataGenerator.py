@@ -5,6 +5,7 @@ import numpy as np
 import os
 from utils import load_image
 
+# Custom data generator for loading image pairs
 class ImageDataGenerator(Sequence):
     def __init__(self, csv_file, image_folder, batch_size=16):
         self.data = pd.read_csv(csv_file)
