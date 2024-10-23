@@ -14,34 +14,34 @@ Milvus Database: Milvus is used to store the image embeddings and enables fast s
 - Siamese Neural Network (Embedding Model):
 - MilvusSimaliritySearch
 
-**prerequisites**
+**Prerequisites**
 
 - Docker installed
 - Python 3.12.2 installed (or similar version)
 
-**How to Use:**
+# How to Use:
 
 Start Milvus database using:
+
 _bash standalone_embed.sh start_
 
+Insert image vectors into the Milvus collection, specify the image folder path in image_folder and call insert_vectors(image_folder, embedding_model, collection) in **MilvusSimaliritySearch**.
 
-To insert image vectors into the Milvus collection, specify the image folder path in image_folder and call insert_vectors(image_folder, embedding_model, collection).
-
-
-Searching for Similar Images:
-
-Use search_similar(image_path, embedding_model) to find the top K similar images in the collection. The default value of top_k is 10, but it can be adjusted as needed.
-Example Usage
-
-Uncomment code and add list of photos to be added to database in assets file. In this case combinedImages is folder with required images
 **Insert vectors into the collection for the first time**
+
 insert_vectors('assets/combinedImages', embedding_model, collection)
 
-**Search for similar images using an input image. In this case picture is from folder called HouseImages. **
+**Search for similar images using an input image. In this case picture is from folder called HouseImages.**
+
 results = search_similar('assets/HouseImages/RandomHouse.jpg', embedding_model)
 
 **Dependencies**
-Dependencies are all in requirements.txt
+
+Dependencies are all in requirements.txt and can be installed there or using:
+
+_pip install -r requirements.txt_
 
 **Notes**
-Ensure that the milvus instance is running before attempting to insert or search vectors.
+
+- Ensure that the milvus instance is running before attempting to insert or search vectors.
+- Code is still a prototype, so a lot of improvements can be made
