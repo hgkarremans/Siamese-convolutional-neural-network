@@ -9,7 +9,6 @@ from tensorflow.keras.models import load_model
 from SiameseNeuralNetwork import load_image
 
 
-# Define the Lambda function outside the model to ensure tf is in scope
 @register_keras_serializable()
 def compute_l1_distance(tensors):
     return tf.abs(tensors[0] - tensors[1])
@@ -22,7 +21,7 @@ siamese_model = load_model(model_file, custom_objects={'compute_l1_distance': co
 embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance},
                              safe_mode=False)
 
-# Connect to Milvus
+# Connect to the milvus database
 connections.connect("default", host="localhost", port="19530")
 
 # Define the schema for the collection
@@ -33,7 +32,7 @@ fields = [
 ]
 schema = CollectionSchema(fields, "HouseImages collection")
 
-# Drop the collection if it exists
+# Drop the collection if it exists for testing purposes
 # if "house_images" in list_collections():
 #     collection = Collection("house_images")
 #     collection.drop()
@@ -62,6 +61,7 @@ def extract_vector(image_path, model):
     return vector[0]
 
 
+# inserting embeddings into the collection
 def insert_vectors(image_folder, model, collection: Collection):
     vectors = []
     image_names = []
@@ -70,85 +70,55 @@ def insert_vectors(image_folder, model, collection: Collection):
     for image_name in tqdm(image_list, desc="Inserting vectors into DB", leave=True, ncols=100,
                            bar_format='{l_bar}{bar} | {n_fmt}/{total_fmt}'):
         image_path = os.path.join(image_folder, image_name)
-        # print(image_name)
         vector = extract_vector(image_path, model)
         if vector is not None:
-            vectors.append(vector.tolist())  # Convert numpy array to list
+            vectors.append(vector.tolist())
             image_names.append(image_name)
 
     # Insert vectors and image names into the Milvus collection
     if vectors and image_names:
-        # Assuming your collection schema has two fields: 'image_name' and 'vector'
         entities = [
             vectors,
             image_names
         ]
 
-        collection.insert(entities)  # Insert entities into Milvus
+        collection.insert(entities)
         print("Insertion complete!")
 
 
 image_folder = 'assets/combinedImages'
+
+# Insert vectors into the collection for the first time
 # insert_vectors(image_folder, embedding_model, collection)
 
 # Create an index for faster search
-collection.create_index("embedding", {"index_type": "IVF_FLAT", "metric_type": "L2", "params": {"nlist": 128}})
+collection.create_index("embedding",
+                        {"index_type": "IVF_FLAT", "metric_type": "L2", "params": {"nlist": 128}})
 
 # Load the collection into memory
 collection.load()
 
 
-# Function to search for similar vectors
-def search_similar(image_path, model, top_k=1):
+# Function to search for similar vectors returning top K similar vectors based on L2 distance
+# K refers to number of similar images to return
+# l2 is the distance metric used to calculate the similarity (Euclidean distance)
+def search_similar(image_path, model, top_k=10):
     query_vector = extract_vector(image_path, model)
     if query_vector is None:
         print(f"Error: Unable to extract vector for image at {image_path}")
         return []
-    results = collection.search([query_vector.tolist()], "embedding", {"metric_type": "L2", "params": {"nprobe": 10}}, limit=top_k, output_fields=["image_name"])
+    results = collection.search([query_vector.tolist()],
+                                "embedding", {"metric_type": "L2", "params": {"nprobe": 10}},
+                                limit=top_k, output_fields=["image_name"])
     return results
 
 
-SEARCH_SIMILAR = search_similar('assets/HouseImages/flip_Lijnmarkt_0_747.jpeg', embedding_model)
+# search with a certain image, in real product this will be image that needs to be tested for duplicates
+SEARCH_SIMILAR = search_similar('assets/HouseImages/RandomHouse.jpg', embedding_model)
 
 # search in the collection
 results = SEARCH_SIMILAR
 for result in results[0]:
-    print("Matching Object Attributes:")
+    print("\nMatching Object Attributes:")
     for attr, value in result.entity.__dict__.items():
         print(f"{attr}: {value}")
-
-
-
-# Function to test the similarity between two images
-def test_similarity(image1_path, image2_path, model, image_folder):
-    loaded_images = {}
-    img1 = load_image(os.path.join(image_folder, image1_path), loaded_images)
-    img2 = load_image(os.path.join(image_folder, image2_path), loaded_images)
-
-    img1 = np.expand_dims(img1, axis=0)
-    img2 = np.expand_dims(img2, axis=0)
-
-    similarity_score = model.predict([img1, img2])[0][0]
-    return similarity_score
-
-# # simalirity test
-# pikachu = 'pikachu.jpeg'
-# lijnmarkt = 'Lijnmarkt.jpg'
-# lijnmarktKopie = 'LijnmarktKopie.jpg'
-# flippedLijnmarkt = 'flip_Lijnmarkt_0_747.jpeg'
-# randomHouse = 'RandomHouse.jpg'
-# randomHouseCropped = 'RandomHouse_cropped.jpg'
-# randomHouseLessCropped = 'RandomHouse_less_cropped.jpg'
-# randomHouseColor = 'RandomHouse_different_color.jpg'
-# RandomHouseRotated = 'RandomHouse_rotated.jpg'
-# RandomHouseWatermark = 'randomhouse_watermark.png'
-# print(f"Similarity score between {pikachu} and {lijnmarkt}: {test_similarity(pikachu, lijnmarkt, siamese_model, 'assets/HouseImages')}")
-# print(f"Similarity score between {lijnmarkt} and {lijnmarktKopie}: {test_similarity(lijnmarkt, lijnmarktKopie, siamese_model, 'assets/HouseImages')}")
-# print(f"Similarity score between {lijnmarkt} and {flippedLijnmarkt}: {test_similarity(lijnmarkt, flippedLijnmarkt, siamese_model, 'assets/HouseImages')}")
-# print(f"Similarity score between {randomHouse} and {randomHouseCropped}: {test_similarity(randomHouse, randomHouseCropped, siamese_model, 'assets/HouseImages')}")
-# print(f"Similarity score between {randomHouse} and {randomHouseLessCropped}: {test_similarity(randomHouse, randomHouseLessCropped, siamese_model, 'assets/HouseImages')}")
-# print(f"Similarity score between {randomHouse} and {randomHouseColor}: {test_similarity(randomHouse, randomHouseColor, siamese_model, 'assets/HouseImages')}")
-# print(f"Similarity score between {randomHouse} and {RandomHouseRotated}: {test_similarity(randomHouse, RandomHouseRotated, siamese_model, 'assets/HouseImages')}")
-# print(f"Similarity score between {randomHouse} and {RandomHouseWatermark}: {test_similarity(randomHouse, RandomHouseWatermark, siamese_model, 'assets/HouseImages')}")
-
-
