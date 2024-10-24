@@ -1,6 +1,7 @@
 import os
 import cv2
 import numpy as np
+import time
 from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, list_collections
 from keras.saving import register_keras_serializable
 import tensorflow as tf
@@ -112,8 +113,6 @@ def insert_vectors(image_folder, model, collection: Collection):
         print("No vectors or image names were found for insertion.")
 
 
-
-
 image_folder = 'assets/combinedImages'
 
 # Insert vectors into the collection for the first time
@@ -131,6 +130,8 @@ collection.load()
 # K refers to number of similar images to return
 # l2 is the distance metric used to calculate the similarity (Euclidean distance)
 def search_similar(image_path, model, top_k=10):
+    start_time = time.time()  # Start the timer
+
     query_vector = extract_vector(image_path, model)
     if query_vector is None:
         print(f"Error: Unable to extract vector for image at {image_path}")
@@ -138,6 +139,11 @@ def search_similar(image_path, model, top_k=10):
     results = collection.search([query_vector.tolist()],
                                 "embedding", {"metric_type": "L2", "params": {"nprobe": 10}},
                                 limit=top_k, output_fields=["image_name"])
+
+    end_time = time.time()  # End the timer
+    elapsed_time = end_time - start_time
+    print(f"Search time: {elapsed_time:.4f} seconds")
+
     return results
 
 
@@ -150,5 +156,3 @@ for result in results[0]:
     print("\nMatching Object Attributes:")
     for attr, value in result.entity.__dict__.items():
         print(f"{attr}: {value}")
-
-
