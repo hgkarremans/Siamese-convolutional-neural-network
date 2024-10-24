@@ -6,6 +6,7 @@ from keras.saving import register_keras_serializable
 import tensorflow as tf
 from tqdm import tqdm
 from tensorflow.keras.models import load_model
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from SiameseNeuralNetwork import load_image
 
 # Function to calculate L1 distance between two tensors (Manhattan distance)
@@ -61,35 +62,62 @@ def extract_vector(image_path, model):
     return vector[0]
 
 
-# inserting embeddings into the collection
+# Function to process and insert a single image
+def process_and_insert_image(image_name, image_folder, model):
+    image_path = os.path.join(image_folder, image_name)
+    vector = extract_vector(image_path, model)
+    if vector is not None:
+        return vector.tolist(), image_name
+    return None, None
+
+
 def insert_vectors(image_folder, model, collection: Collection):
     vectors = []
     image_names = []
     image_list = os.listdir(image_folder)
 
-    for image_name in tqdm(image_list, desc="Inserting vectors into DB", leave=True, ncols=100,
-                           bar_format='{l_bar}{bar} | {n_fmt}/{total_fmt}'):
-        image_path = os.path.join(image_folder, image_name)
-        vector = extract_vector(image_path, model)
-        if vector is not None:
-            vectors.append(vector.tolist())
-            image_names.append(image_name)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(process_and_insert_image, image_name, image_folder, model) for image_name in image_list]
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Inserting vectors into DB", leave=True, ncols=100, bar_format='{l_bar}{bar} | {n_fmt}/{total_fmt}'):
+            vector, image_name = future.result()
+            if vector is not None:
+                vectors.append(vector)
+                image_names.append(image_name)
 
     # Insert vectors and image names into the Milvus collection
     if vectors and image_names:
         entities = [
-            vectors,
-            image_names
+            vectors,  # This is the list of embeddings
+            image_names  # This is the list of image names
         ]
 
-        collection.insert(entities)
-        print("Insertion complete!")
+        # Insert entities into the collection
+        try:
+            collection.insert(entities)
+            print("Insertion complete!")
+        except Exception as e:
+            print(f"Error during insertion: {e}")
+
+        # Flush the collection to ensure data is written to disk
+        collection.flush()
+
+        # Load the collection into memory before counting entities
+        collection.load()
+
+        # Count the number of records in the collection
+        num_records = collection.num_entities
+        print(f"Total number of records in the database: {num_records}")
+
+    else:
+        print("No vectors or image names were found for insertion.")
+
+
 
 
 image_folder = 'assets/combinedImages'
 
 # Insert vectors into the collection for the first time
-# insert_vectors(image_folder, embedding_model, collection)
+insert_vectors(image_folder, embedding_model, collection)
 
 # Create an index for faster search
 collection.create_index("embedding",
@@ -122,3 +150,5 @@ for result in results[0]:
     print("\nMatching Object Attributes:")
     for attr, value in result.entity.__dict__.items():
         print(f"{attr}: {value}")
+
+
