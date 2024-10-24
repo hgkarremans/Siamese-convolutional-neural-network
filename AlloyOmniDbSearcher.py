@@ -1,5 +1,6 @@
 import numpy as np
 import psycopg2
+import time
 from sklearn.metrics.pairwise import cosine_similarity
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.models import load_model
@@ -37,8 +38,10 @@ class ImageSearcher:
         similarities = cosine_similarity([target_embedding], embedding_matrix)[0]  # Compute cosine similarities
         return similarities
 
-    def find_similar_images(self, target_image_path, top_n=5):
+    def find_similar_images(self, target_image_path, top_n=10):
         """Find the top-N most similar images to the given image."""
+        start_time = time.time()  # Start the timer
+
         # Step 1: Generate embedding for the target image
         target_embedding = self.generate_embedding(target_image_path)
 
@@ -53,6 +56,11 @@ class ImageSearcher:
 
         # Get the top-N most similar images
         similar_images = [(embeddings[i][0], similarities[i]) for i in sorted_indices]
+
+        end_time = time.time()  # End the timer
+        elapsed_time = end_time - start_time
+        print(f"Search time: {elapsed_time:.4f} seconds")
+
         return similar_images
 
     def close(self):
@@ -60,26 +68,17 @@ class ImageSearcher:
         self.cursor.close()
         self.conn.close()
 
-
-
-# Database configuration
-db_config = {
-    "host": "localhost",
-    "port": "5433",  # Adjust if needed
-    "database": "Images",
-    "user": "beheerder",
-    "password": "Borghoek2003"
-}
-
-# Create an instance of ImageSearcher
-image_searcher = ImageSearcher(model_path='embedding_model.keras', db_config=db_config)
-
-# Search for the top 5 most similar images to RandomHouse.jpg
-similar_images = image_searcher.find_similar_images('assets/HouseImages/Lijnmarkt.jpg', top_n=5)
-
-# Display the similar images
-for image_name, similarity in similar_images:
-    print(f"Image: {image_name}, Similarity: {similarity:.4f}")
-
-# Close the database connection
-image_searcher.close()
+# Example usage
+if __name__ == "__main__":
+    model_path = 'embedding_model.keras'
+    db_config = {
+        'host': 'localhost',
+        'port': '5433',
+        'database': 'Images',
+        'user': 'beheerder',
+        'password': 'Borghoek2003'
+    }
+    searcher = ImageSearcher(model_path, db_config)
+    similar_images = searcher.find_similar_images('assets/HouseImages/Lijnmarkt.jpg')
+    print(similar_images)
+    searcher.close()
