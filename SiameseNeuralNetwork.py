@@ -139,14 +139,4 @@ else:
     embedding_model = load_model(embedding_model_file, custom_objects={'compute_l1_distance': compute_l1_distance}, safe_mode=False)
     siamese_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0001), metrics=['accuracy'])
 
-# Function to test the similarity between two images
-def test_similarity(image1_path, image2_path, model, image_folder):
-    loaded_images = {}
-    img1 = load_image(os.path.join(image_folder, image1_path), loaded_images)
-    img2 = load_image(os.path.join(image_folder, image2_path), loaded_images)
 
-    img1 = np.expand_dims(img1, axis=0)
-    img2 = np.expand_dims(img2, axis=0)
-
-    similarity_score = model.predict([img1, img2])[0][0]
-    return similarity_score
