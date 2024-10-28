@@ -3,7 +3,8 @@ import psycopg2
 import numpy as np
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.models import load_model
-from tqdm import tqdm  # Import tqdm for the loading bar
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Load your trained Siamese model (modify the path if needed)
 model = load_model('embedding_model.keras')
@@ -14,58 +15,28 @@ image_folder = 'assets/combinedImages'
 # Connect to AlloyDB Omni
 conn = psycopg2.connect(
     host="localhost",
-    port="5433",  # Change this if you're using a different port
+    port="5433",
     database="Images",
     user="beheerder",
-    password="Borghoek2003"
+    password="test12345"
 )
 
 cursor = conn.cursor()
 
-# Drop the table if it exists
-# cursor.execute("DROP TABLE IF EXISTS image_embeddings;")
-# conn.commit()
-#
-# # Create a new table for storing embeddings
-# cursor.execute("""
-#     CREATE TABLE image_embeddings (
-#         id SERIAL PRIMARY KEY,
-#         image_name TEXT NOT NULL,
-#         embedding FLOAT8[] NOT NULL
-#     );
-# """)
-# conn.commit()
-
-
 # Function to preprocess images for the model
 def preprocess_image(image_path):
-    img = image.load_img(image_path, target_size=(128, 128))  # Adjust size to 128x128
+    img = image.load_img(image_path, target_size=(128, 128))
     img_array = image.img_to_array(img)
     img_array = np.expand_dims(img_array, axis=0)
     return img_array
 
-
-# Get the list of images in the folder
-image_files = os.listdir(image_folder)
-
-# Filter out only valid image files based on extensions
-valid_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp'}  # Add more formats as needed
-image_files = [img for img in image_files if os.path.splitext(img)[1].lower() in valid_extensions]
-
-# Iterate through all images in the folder and generate embeddings with a loading bar
-for img_name in tqdm(image_files, desc="Processing Images", unit="image"):
+# Function to process and insert a single image
+def process_and_insert_image(img_name):
     img_path = os.path.join(image_folder, img_name)
-
     try:
         img_array = preprocess_image(img_path)
-
-        # Generate the embedding using the Siamese model
         embedding = model.predict(img_array)
-
-        # Flatten the embedding if needed
         embedding = embedding.flatten().tolist()
-
-        # Insert the image name and embedding into the database
         cursor.execute("""
             INSERT INTO image_embeddings (image_name, embedding)
             VALUES (%s, %s);
@@ -73,6 +44,17 @@ for img_name in tqdm(image_files, desc="Processing Images", unit="image"):
         conn.commit()
     except Exception as e:
         print(f"Error processing image {img_name}: {e}")
+
+# Get the list of images in the folder
+image_files = os.listdir(image_folder)
+valid_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp'}
+image_files = [img for img in image_files if os.path.splitext(img)[1].lower() in valid_extensions]
+
+# Use ThreadPoolExecutor to process images in parallel
+with ThreadPoolExecutor(max_workers=8) as executor:
+    futures = [executor.submit(process_and_insert_image, img_name) for img_name in image_files]
+    for future in tqdm(as_completed(futures), total=len(futures), desc="Processing Images", unit="image"):
+        future.result()
 
 # Query the database to count the total number of records
 cursor.execute("SELECT COUNT(*) FROM image_embeddings;")

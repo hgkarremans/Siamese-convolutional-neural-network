@@ -1,8 +1,11 @@
 import numpy as np
 import psycopg2
+import time
 from sklearn.metrics.pairwise import cosine_similarity
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.models import load_model
+
+import faiss
 
 class ImageSearcher:
     def __init__(self, model_path, db_config):
@@ -31,55 +34,39 @@ class ImageSearcher:
         self.cursor.execute("SELECT image_name, embedding FROM image_embeddings")
         return self.cursor.fetchall()
 
-    def compute_similarity(self, target_embedding, embeddings):
-        """Compute cosine similarity between the target embedding and the list of embeddings."""
-        embedding_matrix = np.array([e[1] for e in embeddings])  # Extract just the embeddings
-        similarities = cosine_similarity([target_embedding], embedding_matrix)[0]  # Compute cosine similarities
-        return similarities
+    def build_faiss_index(self, embeddings):
+        """Build a faiss index for fast similarity search."""
+        embedding_matrix = np.array([e[1] for e in embeddings]).astype('float32')
+        index = faiss.IndexFlatL2(embedding_matrix.shape[1])
+        index.add(embedding_matrix)
+        return index
 
-    def find_similar_images(self, target_image_path, top_n=5):
+    def find_similar_images(self, target_image_path, top_n=10):
         """Find the top-N most similar images to the given image."""
+        start_time = time.time()  # Start the timer
+
         # Step 1: Generate embedding for the target image
-        target_embedding = self.generate_embedding(target_image_path)
+        target_embedding = self.generate_embedding(target_image_path).astype('float32')
 
         # Step 2: Fetch all stored embeddings from the database
         embeddings = self.fetch_all_embeddings()
 
-        # Step 3: Compute similarities
-        similarities = self.compute_similarity(target_embedding, embeddings)
+        # Step 3: Build faiss index
+        index = self.build_faiss_index(embeddings)
 
-        # Step 4: Sort by similarity and get top-N results
-        sorted_indices = np.argsort(similarities)[::-1][:top_n]  # Sort in descending order
+        # Step 4: Search for the most similar embeddings
+        distances, indices = index.search(np.array([target_embedding]), top_n)
 
         # Get the top-N most similar images
-        similar_images = [(embeddings[i][0], similarities[i]) for i in sorted_indices]
+        similar_images = [(embeddings[i][0], distances[0][j]) for j, i in enumerate(indices[0])]
+
+        end_time = time.time()  # End the timer
+        elapsed_time = end_time - start_time
+        print(f"Search time: {elapsed_time:.4f} seconds")
+
         return similar_images
 
     def close(self):
         """Close the database connection."""
         self.cursor.close()
         self.conn.close()
-
-
-
-# Database configuration
-db_config = {
-    "host": "localhost",
-    "port": "5433",  # Adjust if needed
-    "database": "Images",
-    "user": "beheerder",
-    "password": "Borghoek2003"
-}
-
-# Create an instance of ImageSearcher
-image_searcher = ImageSearcher(model_path='embedding_model.keras', db_config=db_config)
-
-# Search for the top 5 most similar images to RandomHouse.jpg
-similar_images = image_searcher.find_similar_images('assets/HouseImages/Lijnmarkt.jpg', top_n=5)
-
-# Display the similar images
-for image_name, similarity in similar_images:
-    print(f"Image: {image_name}, Similarity: {similarity:.4f}")
-
-# Close the database connection
-image_searcher.close()
