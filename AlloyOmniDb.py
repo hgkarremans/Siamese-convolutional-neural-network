@@ -18,7 +18,7 @@ conn = psycopg2.connect(
     port="5433",
     database="Images",
     user="beheerder",
-    password="Borghoek2003"
+    password="test12345"
 )
 
 cursor = conn.cursor()
