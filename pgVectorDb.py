@@ -1,9 +1,12 @@
 import os
+import time
+
 import numpy as np
 import psycopg2
 from keras.src.saving import register_keras_serializable
 from tensorflow.keras.models import load_model
 from tqdm import tqdm
+import time
 
 from SiameseNeuralNetwork import embedding_model
 from utils import load_image
@@ -80,6 +83,15 @@ class ImageEmbeddingDatabase:
         similarities.sort(key=lambda x: x[1], reverse=True)
         return similarities[:top_n]
 
+    def count_vectors(self):
+        conn = psycopg2.connect(**self.db_config)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM images")
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return count
+
     def show_top_similar_images(self, image_path, top_n=5):
         search_embedding = self.generate_embedding(image_path)
         stored_embeddings = self.get_stored_embeddings()
@@ -89,6 +101,7 @@ class ImageEmbeddingDatabase:
             print(f"Image: {image_name}, Similarity: {similarity}")
 
     def check_duplicate(self, image_path, similarity_threshold=0.8):
+
         search_embedding = self.generate_embedding(image_path)
         stored_embeddings = self.get_stored_embeddings()
         closest_image, similarity = self.find_closest_image(search_embedding, stored_embeddings)
@@ -97,6 +110,7 @@ class ImageEmbeddingDatabase:
             print(f"Duplicate image found: {closest_image} with similarity: {similarity}")
         else:
             print(f"No duplicate image found. Highest similarity: {similarity}")
+
 
 # Usage
 if __name__ == "__main__":
@@ -112,8 +126,15 @@ if __name__ == "__main__":
     image_folder = 'assets/combinedImages'
 
     image_embedding_db = ImageEmbeddingDatabase(model_path, image_folder, db_config)
-    # image_embedding_db.store_embeddings()
+    image_embedding_db.store_embeddings()
 
     # Check for duplicate image
     image_path = 'assets/HouseImages/Lijnmarkt.jpg'
+    start_time = time.time()
     image_embedding_db.show_top_similar_images(image_path, top_n=5)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Time taken to check for duplicates: {elapsed_time:.2f} seconds")
+
+    vector_count = image_embedding_db.count_vectors()
+    print(f"\nTotal number of vectors in the database: {vector_count}")
