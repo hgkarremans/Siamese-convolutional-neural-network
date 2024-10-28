@@ -64,7 +64,7 @@ class ImageEmbeddingDatabase:
     def find_top_similar_images(self, search_embedding, top_n=10):
         # Convert the embedding to a PostgreSQL vector type
         query = f"""
-        SELECT image_name, image_vector <=> %s::vector AS distance
+        SELECT image_name, image_vector <-> %s::vector AS distance
         FROM images
         ORDER BY distance
         LIMIT %s;
@@ -123,9 +123,9 @@ if __name__ == "__main__":
     # image_embedding_db.store_embeddings()
 
     # Check for duplicate image
-    image_path = 'assets/HouseImages/pikachu.jpeg<'
+    image_path = 'assets/HouseImages/RandomHouse_rotated.jpg'
     start_time = time.time()
-    image_embedding_db.show_top_similar_images(image_path, top_n=40)
+    image_embedding_db.show_top_similar_images(image_path, top_n=60)
     end_time = time.time()
     elapsed_time = end_time - start_time
     print(f"\nTime taken to check for duplicates: {elapsed_time:.2f} seconds")
