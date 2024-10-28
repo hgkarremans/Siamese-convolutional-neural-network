@@ -118,17 +118,20 @@ if __name__ == "__main__":
 
     model_path = 'embedding_model.keras'
     image_folder = 'assets/combinedImages'
-
+    total_time = time.time()
     image_embedding_db = ImageEmbeddingDatabase(model_path, image_folder, db_config)
     # image_embedding_db.store_embeddings()
 
     # Check for duplicate image
-    image_path = 'assets/HouseImages/Lijnmarkt.jpg'
+    image_path = 'assets/HouseImages/pikachu.jpeg<'
     start_time = time.time()
-    image_embedding_db.show_top_similar_images(image_path, top_n=10)
+    image_embedding_db.show_top_similar_images(image_path, top_n=40)
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f"Time taken to check for duplicates: {elapsed_time:.2f} seconds")
+    print(f"\nTime taken to check for duplicates: {elapsed_time:.2f} seconds")
 
     vector_count = image_embedding_db.count_vectors()
     print(f"\nTotal number of vectors in the database: {vector_count}")
+    total_elapsed_time = time.time() - total_time
+
+    print(f"\nTotal time taken: {total_elapsed_time:.2f} seconds")
