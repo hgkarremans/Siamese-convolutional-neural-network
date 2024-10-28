@@ -1,16 +1,13 @@
 import os
 import time
-
 import numpy as np
 import psycopg2
 from keras.src.saving import register_keras_serializable
 from tensorflow.keras.models import load_model
 from tqdm import tqdm
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from utils import load_image
 import tensorflow as tf
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 @register_keras_serializable()
 def compute_l1_distance(tensors):
@@ -34,19 +31,9 @@ class ImageEmbeddingDatabase:
         embedding = self.model.predict(img)
         return embedding[0]
 
-    # def image_exists(self, image_name):
-    #     conn = psycopg2.connect(**self.db_config)
-    #     cur = conn.cursor()
-    #     cur.execute("SELECT 1 FROM images WHERE image_name = %s", (image_name,))
-    #     exists = cur.fetchone() is not None
-    #     cur.close()
-    #     conn.close()
-    #     return exists
-
     def store_embeddings(self):
         def process_and_insert_image(image_name):
             img_path = os.path.join(self.image_folder, image_name)
-            # if os.path.isfile(img_path) and not self.image_exists(image_name):
             try:
                 embedding = self.generate_embedding(img_path)
                 conn = psycopg2.connect(**self.db_config)
@@ -74,18 +61,21 @@ class ImageEmbeddingDatabase:
         conn.close()
         return stored_embeddings
 
-    def find_top_similar_images(self, search_embedding, stored_embeddings, top_n=5):
-        similarities = []
-
-        for image_name, embedding in stored_embeddings:
-            embedding = np.array(eval(embedding))  # Convert the embedding from string to numpy array
-            similarity = np.dot(search_embedding, embedding) / (
-                        np.linalg.norm(search_embedding) * np.linalg.norm(embedding))
-            similarities.append((image_name, similarity))
-
-        # Sort by similarity in descending order and get the top N results
-        similarities.sort(key=lambda x: x[1], reverse=True)
-        return similarities[:top_n]
+    def find_top_similar_images(self, search_embedding, top_n=10):
+        # Convert the embedding to a PostgreSQL vector type
+        query = f"""
+        SELECT image_name, image_vector <=> %s::vector AS distance
+        FROM images
+        ORDER BY distance
+        LIMIT %s;
+        """
+        conn = psycopg2.connect(**self.db_config)
+        cur = conn.cursor()
+        cur.execute(query, (np.array(search_embedding).tolist(), top_n))  # Ensure it's a list
+        results = cur.fetchall()
+        cur.close()
+        conn.close()
+        return results
 
     def count_vectors(self):
         conn = psycopg2.connect(**self.db_config)
@@ -98,23 +88,23 @@ class ImageEmbeddingDatabase:
 
     def show_top_similar_images(self, image_path, top_n=5):
         search_embedding = self.generate_embedding(image_path)
-        stored_embeddings = self.get_stored_embeddings()
-        top_similar_images = self.find_top_similar_images(search_embedding, stored_embeddings, top_n)
+        top_similar_images = self.find_top_similar_images(search_embedding, top_n)
 
         for image_name, similarity in top_similar_images:
-            print(f"Image: {image_name}, Similarity: {similarity}")
+            print(f"Image: {image_name}, Distance: {similarity}")
 
     def check_duplicate(self, image_path, similarity_threshold=0.8):
-
         search_embedding = self.generate_embedding(image_path)
-        stored_embeddings = self.get_stored_embeddings()
-        closest_image, similarity = self.find_closest_image(search_embedding, stored_embeddings)
+        top_similar_images = self.find_top_similar_images(search_embedding, top_n=1)
 
-        if similarity >= similarity_threshold:
-            print(f"Duplicate image found: {closest_image} with similarity: {similarity}")
+        if top_similar_images:
+            closest_image, similarity = top_similar_images[0]
+            if similarity >= similarity_threshold:
+                print(f"Duplicate image found: {closest_image} with similarity: {similarity}")
+            else:
+                print(f"No duplicate image found. Highest similarity: {similarity}")
         else:
-            print(f"No duplicate image found. Highest similarity: {similarity}")
-
+            print("No images found in the database.")
 
 # Usage
 if __name__ == "__main__":
@@ -130,12 +120,12 @@ if __name__ == "__main__":
     image_folder = 'assets/combinedImages'
 
     image_embedding_db = ImageEmbeddingDatabase(model_path, image_folder, db_config)
-    image_embedding_db.store_embeddings()
+    # image_embedding_db.store_embeddings()
 
     # Check for duplicate image
     image_path = 'assets/HouseImages/Lijnmarkt.jpg'
     start_time = time.time()
-    image_embedding_db.show_top_similar_images(image_path, top_n=5)
+    image_embedding_db.show_top_similar_images(image_path, top_n=10)
     end_time = time.time()
     elapsed_time = end_time - start_time
     print(f"Time taken to check for duplicates: {elapsed_time:.2f} seconds")
