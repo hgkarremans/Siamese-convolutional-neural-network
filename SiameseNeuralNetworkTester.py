@@ -37,6 +37,7 @@ print(f"\nL2 distance between RandomHouse.jpg and RandomHouse_less_cropped.jpg i
 print(f"\nL2 distance between RandomHouse.jpg and RandomHouse_different_color.jpg is {generate_embeddings_and_compute_l2('RandomHouse.jpg', 'RandomHouse_different_color.jpg', embedding_model, image_folder)}")
 print(f"\nL2 distance between RandomHouse.jpg and RandomHouse_watermark.png is {generate_embeddings_and_compute_l2('RandomHouse.jpg', 'randomhouse_watermark.png', embedding_model, image_folder)}")
 print(f"\nL2 distance between RandomHouse.jpg and pikachu.jpeg is {generate_embeddings_and_compute_l2('RandomHouse.jpg', 'pikachu.jpeg', embedding_model, image_folder)}")
+print(f"\nL2 distance between RandomHouse.jpg and Lijnmarkt.jpg is {generate_embeddings_and_compute_l2('RandomHouse.jpg', 'Lijnmarkt.jpg', embedding_model, image_folder)}")
 
 
 
